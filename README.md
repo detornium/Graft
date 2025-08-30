@@ -1,0 +1,120 @@
+# Graft (PoC) — Compile‑time Java Mapper
+
+> **Status:** Proof‑of‑Concept. APIs and behavior are unstable and subject to change.
+
+Graft is a tiny **annotation‑processor–based mapping library**. You write a small DSL in a “spec” class; the processor
+generates a type‑safe mapper — no reflection, no runtime container.
+
+---
+
+## Example: Bean → DTO
+
+**Spec** (`CarToCarDtoMapperSpec.java`)
+
+```java
+@MappingSpec(com.detornium.graft.mappers.CarToCarDtoMapper.class)
+class CarToCarDtoMapperSpec extends MappingDsl<Car, CarDto> {
+    {
+        map(Car::getModel).to(CarDto::setCarModel);
+        map(Car::getVersion).converting(String::valueOf).to(CarDto::setVersion);
+        exclude(CarDto::setOwner);
+        map(Car::getPrevOwners).to(CarDto::setPreviousOwners);
+        self().converting(CarToCarDtoMapperSpec::carToDescription).to(CarDto::setDescription);
+        value("N/A").to(CarDto::setNotes);
+    }
+}
+```
+
+**Generated mapper (excerpt)** (`CarToCarDtoMapper.java`)
+
+```java
+private final Function<Integer, String> versionConverter = String::valueOf;
+private final Function<Car, String> descriptionConverter = CarToCarDtoMapperSpec::carToDescription;
+
+public final CarDto map(Car src) {
+    if (src == null) {
+        return null;
+    }
+    CarDto dst = new CarDto();
+    dst.setCarModel(src.getModel());
+    dst.setVersion(versionConverter.apply(src.getVersion()));
+    dst.setPreviousOwners(src.getPrevOwners());
+    dst.setDescription(descriptionConverter.apply(src));
+    dst.setNotes("N/A");
+    dst.setColor(src.getColor());
+    return dst;
+}
+```
+
+---
+
+## Example: Bean → DTO Record
+
+**Spec** (`CarToCarDtoRecordMapperSpec.java`)
+
+```java
+@MappingSpec(com.detornium.graft.mappers.CarToCarDtoRecordMapper.class)
+class CarToCarDtoRecordMapperSpec extends MappingDsl<Car, CarDtoRecord> {
+    {
+        map(Car::getModel).to(CarDtoRecord::carModel);
+        map(Car::getVersion).converting(String::valueOf).to(CarDtoRecord::version);
+        exclude(CarDtoRecord::owner);
+        self().converting(CarToCarDtoRecordMapperSpec::carToDescription).to(CarDtoRecord::description);
+        value("N/A").to(CarDtoRecord::notes);
+    }
+}
+```
+
+**Generated mapper (excerpt)** (`CarToCarDtoRecordMapper.java`)
+
+```java
+private final Function<Integer, String> versionConverter = String::valueOf;
+private final Function<Car, String> descriptionConverter = CarToCarDtoRecordMapperSpec::carToDescription;
+
+public final CarDtoRecord map(Car src) {
+    if (src == null) {
+        return null;
+    }
+    return new CarDtoRecord(src.getColor(),
+            src.getModel(),
+            versionConverter.apply(src.getVersion()),
+            null,
+            descriptionConverter.apply(src),
+            "N/A");
+}
+```
+
+---
+
+## How it works
+
+1. You declare mappings in a spec class (extends `MappingDsl<S, D>`):
+    - `map(getter).to(setter)`
+    - `map(getter).converting(fn).to(setter)`
+    - `exclude(setter)`
+    - `self().converting(fn).to(setter)`
+    - `value(constant).to(setter)`
+2. The **annotation processor** parses the call chains and generates a concrete mapper.
+
+> Records are supported via component getters; for immutable targets, values are set via constructor/builder as
+> applicable.
+
+---
+
+## Roadmap (PoC)
+
+- [ ] Lombok binding SPI
+- [ ] Better diagnostics & source ranges
+- [ ] Lambda lifting for `converting(...)`
+- [ ] Collection/array mapping options
+- [ ] Clone support
+- [ ] Nested mapping support
+
+---
+
+## License
+
+Licensed under the **Apache License, Version 2.0**.
+
+Copyright © 2025 Taras Semaniv
+
