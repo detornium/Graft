@@ -24,15 +24,14 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.RecordComponentElement;
 import javax.lang.model.element.TypeElement;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import static com.detornium.graft.annotations.processors.generators.CodeSnippets.methodRefCode;
 import static com.detornium.graft.annotations.processors.generators.CodeSnippets.returnNullIfNullCode;
 
-public class DestRecordMapperGenerator implements MapperGenerator {
+public class DestRecordMapperGenerator extends MapperGeneratorBase {
 
     @Override
     public GeneratorResult generate(Fqcn fqcn,
@@ -55,74 +54,40 @@ public class DestRecordMapperGenerator implements MapperGenerator {
                 .addCode(returnNullIfNullCode("src"));
 
         List<? extends RecordComponentElement> components = dst.getRecordComponents();
-        StringBuilder args = new StringBuilder();
+        List<CodeBlock> args = new LinkedList<>();
 
-        for (int i = 0; i < components.size(); i++) {
-            RecordComponentElement component = components.get(i);
+        for (RecordComponentElement component : components) {
             String destName = component.getSimpleName().toString();
             String type = component.asType().toString();
 
-            String value;
+            CodeBlock retrieveValueCode;
             Mapping mapping = mappingMap.get(destName);
             if (mapping != null && !mapping.isExclude()) {
                 Accessor setter = mapping.getSetter();
                 Accessor getter = mapping.getGetter();
+                String getterMethod = getter == null ? null : getter.getMethodName();
+
                 ConstantValue constantSrc = mapping.getConstant();
 
+                retrieveValueCode = generateValueRetrievalCode(constantSrc, getter, getterMethod);
                 MemberRefInfo converter = mapping.getConverter();
-                if (constantSrc != null && constantSrc.getValue() != null) {
-                    value = constantSrc.getValue();
-                } else if (converter != null && getter != null) {
-                    String converterDefinitionName = setter.getName() + "Converter";
-                    TypeName converterType = ParameterizedTypeName.get(
-                            ClassName.get(Function.class),
-                            ClassName.get(getter.getValueType()),
-                            ClassName.get(setter.getValueType())
-                    );
 
-                    FieldSpec converterField = FieldSpec.builder(converterType, converterDefinitionName)
-                            .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
-                            .initializer("$L", methodRefCode(converter))
-                            .build();
+                // Apply cloning if needed
+                retrieveValueCode = generateCloneCode(src, mapping, getter, retrieveValueCode);
 
-                    fields.add(converterField);
-
-                    value = String.format("%s.apply(src.%s())", converterDefinitionName, getter.getMethodName());
-                } else if (getter != null) {
-                    value = "src." + getter.getMethodName() + "()";
-                } else if (converter != null) {
-                    String converterDefinitionName = setter.getName() + "Converter";
-                    TypeName converterType = ParameterizedTypeName.get(
-                            ClassName.get(Function.class),
-                            srcType,
-                            ClassName.get(setter.getValueType())
-                    );
-
-                    FieldSpec converterField = FieldSpec.builder(converterType, converterDefinitionName)
-                            .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
-                            .initializer("$L", methodRefCode(converter))
-                            .build();
-
-                    fields.add(converterField);
-
-                    value = String.format("%s.apply(src)", converterDefinitionName);
-                } else {
-                    value = "src";
-                }
+                // Apply converter if present
+                retrieveValueCode = generateConvertCode(converter, setter, getter, srcType, fields, retrieveValueCode);
             } else if (isPrimitive(type)) {
-                value = getZeroValue(type);
+                retrieveValueCode = CodeBlock.of("$L", getZeroValue(type));
             } else {
-                value = "null";
+                retrieveValueCode = CodeBlock.of("null");
             }
 
-            args.append(value);
-            if (i < components.size() - 1) {
-                args.append(", ");
-                args.append(System.lineSeparator());
-            }
+            args.add(retrieveValueCode);
         }
 
-        mapMethod.addStatement("return new $T($L)", dstType, args);
+        CodeBlock argsBlock = CodeBlock.join(args, "," + System.lineSeparator());
+        mapMethod.addStatement("return new $T($L)", dstType, argsBlock);
 
         ParameterizedTypeName superInterface = ParameterizedTypeName.get(
                 ClassName.get(Mapper.class), srcType, dstType

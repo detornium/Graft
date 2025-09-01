@@ -13,17 +13,17 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+package com.detornium.graft.specs;
 
-package com.detornium.graft.annotations.processors.models;
+import com.detornium.graft.MappingDsl;
+import com.detornium.graft.annotations.MappingSpec;
+import com.detornium.graft.models.RawCollectionsBean;
 
-import lombok.Data;
-
-@Data
-public class Mapping {
-    private ConstantValue constant; // expr for value(...)
-    private Accessor getter;    // e.g. getSeatCount
-    private Accessor setter;    // e.g. setNumberOfSeats
-    private MemberRefInfo converter; // raw expr for converting(...) or null
-    private boolean exclude;  // when exclude(setter)
-    private boolean copy;     // when copy()
+@MappingSpec(com.detornium.graft.mappers.CopyRawCollectionsMapper.class)
+public class CopyRawCollectionsSpec extends MappingDsl<RawCollectionsBean, RawCollectionsBean> {
+    {
+        map(RawCollectionsBean::getList).copy().to(RawCollectionsBean::setList);
+        map(RawCollectionsBean::getSet).copy().to(RawCollectionsBean::setSet);
+        map(RawCollectionsBean::getMap).copy().to(RawCollectionsBean::setMap);
+    }
 }

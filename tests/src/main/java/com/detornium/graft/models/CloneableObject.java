@@ -13,17 +13,21 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+package com.detornium.graft.models;
 
-package com.detornium.graft.annotations.processors.models;
-
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.SneakyThrows;
 
 @Data
-public class Mapping {
-    private ConstantValue constant; // expr for value(...)
-    private Accessor getter;    // e.g. getSeatCount
-    private Accessor setter;    // e.g. setNumberOfSeats
-    private MemberRefInfo converter; // raw expr for converting(...) or null
-    private boolean exclude;  // when exclude(setter)
-    private boolean copy;     // when copy()
+@AllArgsConstructor
+public class CloneableObject implements Cloneable {
+    private String value1;
+    private String value2;
+
+    @Override
+    @SneakyThrows
+    public CloneableObject clone() {
+        return (CloneableObject) super.clone();
+    }
 }
