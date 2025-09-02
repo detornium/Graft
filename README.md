@@ -84,6 +84,36 @@ public final CarDtoRecord map(Car src) {
 }
 ```
 
+## Example: Copy (Cloneable + List)
+
+**Spec** (`CopySpec.java`)
+
+```java
+@MappingSpec(com.detornium.graft.mappers.CopyTestMapper.class)
+class CopySpec extends MappingDsl<CopyTestBean, CopyTestDto> { 
+    {
+        // Cloneable field
+        map(CopyTestBean::getObject).copy().to(CopyTestDto::setObject);
+        
+        // Collection (List) shallow copy
+        map(CopyTestBean::getList).copy().to(CopyTestDto::setList);
+    }
+}
+```
+
+
+**Generated mapper (excerpt)**(`CopyTestMapper.java`)
+
+```java
+   dst.setObject((src.getObject() != null) ? (CloneableObject) (src.getObject()).clone() : null);
+   dst.setList((src.getList() != null) ? new ArrayList<>(src.getList()) : null);
+```
+Semantics
+
+.copy() on Cloneable: generates a null-safe clone() call (shallow clone). clone() must be accessible on the runtime type.
+
+.copy() on List: generates a new ArrayList<>(src) (shallow copy). Elements are not deep-cloned.
+
 ---
 
 ## How it works
@@ -91,6 +121,7 @@ public final CarDtoRecord map(Car src) {
 1. You declare mappings in a spec class (extends `MappingDsl<S, D>`):
     - `map(getter).to(setter)`
     - `map(getter).converting(fn).to(setter)`
+    - `map(getter).copy().to(setter)`
     - `exclude(setter)`
     - `self().converting(fn).to(setter)`
     - `value(constant).to(setter)`
@@ -107,7 +138,7 @@ public final CarDtoRecord map(Car src) {
 - [ ] Better diagnostics & source ranges
 - [ ] Lambda lifting for `converting(...)`
 - [ ] Collection/array mapping options
-- [ ] Clone support
+- [x] Clone support
 - [ ] Nested mapping support
 
 ---
