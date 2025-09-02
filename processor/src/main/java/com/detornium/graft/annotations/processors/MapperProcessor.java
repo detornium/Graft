@@ -33,6 +33,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import java.util.*;
@@ -48,14 +49,25 @@ import static com.detornium.graft.annotations.processors.utils.MappingUtils.*;
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class MapperProcessor extends AbstractProcessor {
 
+    // TODO: use tree for possible combinations hint
     private static final List<List<String>> ALLOWED_CALL_CHAIN = List.of(
             List.of("map", "to"),
             List.of("map", "converting", "to"),
             List.of("exclude"),
             List.of("self", "to"),
             List.of("self", "converting", "to"),
-            List.of("value", "to")
+            List.of("value", "to"),
+            List.of("self", "copy", "to"),
+            List.of("map", "copy", "to")
     );
+
+    private static final String MAP_INSTR = "map";
+    private static final String VALUE_INSTR = "value";
+    private static final String SELF_INSTR = "self";
+    private static final String COPY_INSTR = "copy";
+    private static final String CONVERTING_INSTR = "converting";
+    private static final String TO_INSTR = "to";
+    private static final String EXCLUDE_INSTR = "exclude";
 
     private Elements elements;
     private Filer filer;
@@ -186,7 +198,7 @@ public class MapperProcessor extends AbstractProcessor {
         for (Call call : callChain) {
             String callName = call.methodName();
             switch (callName) {
-                case "map" -> {
+                case MAP_INSTR -> {
                     MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
                             .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
 
@@ -194,16 +206,35 @@ public class MapperProcessor extends AbstractProcessor {
                     Accessor getter = resolveGetter(executableElement, src);
                     mapping.setGetter(getter);
                 }
-                case "value" -> {
+                case VALUE_INSTR -> {
                     ConstantValue constValue = processingUtils.resolveConstantValue(spec, call.argument(0))
                             .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a constant value."));
 
                     mapping.setConstant(constValue);
                 }
-                case "self" -> {
+                case SELF_INSTR -> {
                     mapping.setGetter(null); // mark as self
                 }
-                case "to" -> {
+                case COPY_INSTR -> {
+                    // check if getter return is Cloneable, Map, Collection or array
+                    TypeMirror srcPropertyType = mapping.getGetter() == null
+                            ? src.asType()
+                            : mapping.getGetter().getValueType();
+
+                    if (!isCloneable(srcPropertyType) && !isMap(srcPropertyType)
+                            && !isCollection(srcPropertyType) && !isArray(srcPropertyType)) {
+                        throw new ProcessingException(expr, "Cloning is only supported for Cloneable, Map, Collection or array types.");
+                    }
+
+                    mapping.setCopy(true);
+                }
+                case CONVERTING_INSTR -> {
+                    MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
+                            .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
+
+                    mapping.setConverter(memberRefInfo); // lambda or method ref
+                }
+                case TO_INSTR -> {
                     MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
                             .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
 
@@ -212,13 +243,7 @@ public class MapperProcessor extends AbstractProcessor {
                     Accessor setter = resolveSetter(executableElement, dst);
                     mapping.setSetter(setter);
                 }
-                case "converting" -> {
-                    MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
-                            .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
-
-                    mapping.setConverter(memberRefInfo); // lambda or method ref
-                }
-                case "exclude" -> {
+                case EXCLUDE_INSTR -> {
                     MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
                             .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
 

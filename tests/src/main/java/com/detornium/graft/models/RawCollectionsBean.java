@@ -13,17 +13,38 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+package com.detornium.graft.models;
 
-package com.detornium.graft.annotations.processors.models;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
-import lombok.Data;
+public class RawCollectionsBean {
+    private List list;
+    private Set set;
+    private Map map;
 
-@Data
-public class Mapping {
-    private ConstantValue constant; // expr for value(...)
-    private Accessor getter;    // e.g. getSeatCount
-    private Accessor setter;    // e.g. setNumberOfSeats
-    private MemberRefInfo converter; // raw expr for converting(...) or null
-    private boolean exclude;  // when exclude(setter)
-    private boolean copy;     // when copy()
+    public List getList() {
+        return list;
+    }
+
+    public void setList(List list) {
+        this.list = list;
+    }
+
+    public Set getSet() {
+        return set;
+    }
+
+    public void setSet(Set set) {
+        this.set = set;
+    }
+
+    public Map getMap() {
+        return map;
+    }
+
+    public void setMap(Map map) {
+        this.map = map;
+    }
 }

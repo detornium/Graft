@@ -24,7 +24,10 @@ import javax.lang.model.type.MirroredTypeException;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import java.lang.annotation.Annotation;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.function.Function;
 
 public final class Helpers {
@@ -50,6 +53,27 @@ public final class Helpers {
         return type.getKind() == ElementKind.RECORD;
     }
 
+    public static boolean isCloneable(TypeMirror tm) {
+        return declaredTypeMirrorToTypeElement(tm)
+                .flatMap(te -> findSuperclass(te, Cloneable.class, 0))
+                .isPresent();
+    }
+
+    public static boolean isMap(TypeMirror tm) {
+        return declaredTypeMirrorToTypeElement(tm)
+                .flatMap(te -> findSuperclass(te, java.util.Map.class, 2))
+                .isPresent();
+    }
+
+    public static boolean isCollection(TypeMirror tm) {
+        return declaredTypeMirrorToTypeElement(tm)
+                .flatMap(te -> findSuperclass(te, java.util.Collection.class, 1))
+                .isPresent();
+    }
+
+    public static boolean isArray(TypeMirror tm) {
+        return tm.getKind() == TypeKind.ARRAY;
+    }
 
     public static Optional<TypeElement> declaredTypeMirrorToTypeElement(TypeMirror tm) {
         if (tm.getKind() == TypeKind.DECLARED
@@ -61,23 +85,49 @@ public final class Helpers {
         }
     }
 
-    public static Optional<DeclaredType> findSuperclass(TypeElement spec, Class<?> superclass, Integer typeArgsCount) {
-        TypeMirror cur = spec.getSuperclass();
-        String canonicalName = superclass.getCanonicalName();
+    public static Class<?> getClassForType(TypeMirror tm) {
+        return declaredTypeMirrorToTypeElement(tm)
+                .map(te -> {
+                    try {
+                        return Class.forName(te.getQualifiedName().toString());
+                    } catch (ClassNotFoundException e) {
+                        throw new IllegalStateException("Cannot find class for type mirror: %s".formatted(tm), e);
+                    }
+                })
+                .orElseThrow(() -> new IllegalStateException("Type mirror is not a declared type: %s".formatted(tm)));
+    }
 
-        while (cur.getKind() != TypeKind.NONE) {
-            DeclaredType dt = (DeclaredType) cur;
-            Element el = dt.asElement();
-            if (el instanceof TypeElement te
-                    && te.getQualifiedName().contentEquals(canonicalName)
-                    && (typeArgsCount == null || dt.getTypeArguments().size() == typeArgsCount)) {
-                return Optional.of(dt);
+    public static Optional<DeclaredType> findSuperclass(TypeMirror tm, Class<?> superclass, Integer typeArgsCount) {
+        return declaredTypeMirrorToTypeElement(tm)
+                .flatMap(te -> findSuperclass(te, superclass, typeArgsCount));
+    }
+
+    public static Optional<DeclaredType> findSuperclass(TypeElement type, Class<?> classToFind, Integer typeArgsCount) {
+        String canonicalName = classToFind.getCanonicalName();
+
+        Queue<TypeMirror> classes = new LinkedList<>(List.of(type.asType()));
+
+        while (!classes.isEmpty()) {
+            TypeMirror current = classes.poll();
+            if (current.getKind() == TypeKind.DECLARED && current instanceof DeclaredType dt) {
+                Element el = dt.asElement();
+
+                if (el instanceof TypeElement te
+                        && te.getQualifiedName().contentEquals(canonicalName)
+                        && (typeArgsCount == null || dt.getTypeArguments().size() == typeArgsCount)) {
+                    return Optional.of(dt);
+                }
+
+                if (el instanceof TypeElement te) {
+                    classes.addAll(te.getInterfaces());
+                    TypeMirror superClass = te.getSuperclass();
+                    if (superClass.getKind() != TypeKind.NONE) {
+                        classes.add(superClass);
+                    }
+                }
             }
-
-            cur = ((TypeElement) el).getSuperclass();
         }
 
         return Optional.empty();
     }
-
 }

@@ -24,11 +24,11 @@ import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 
-import static com.detornium.graft.annotations.processors.generators.CodeSnippets.*;
+import static com.detornium.graft.annotations.processors.generators.CodeSnippets.constructVariableStatement;
+import static com.detornium.graft.annotations.processors.generators.CodeSnippets.returnNullIfNullCode;
 
-public class GetterSetterMapperGenerator implements MapperGenerator {
+public class GetterSetterMapperGenerator extends MapperGeneratorBase {
 
     @Override
     public GeneratorResult generate(Fqcn fqcn,
@@ -49,10 +49,12 @@ public class GetterSetterMapperGenerator implements MapperGenerator {
                 .addCode(returnNullIfNullCode("src"))
                 .addStatement(constructVariableStatement(dstType, "dst"));
 
-        for (Mapping mapping : mappings) {
-            if (mapping.isExclude()) continue;
-            if (mapping.getSetter() == null) continue;
 
+        for (Mapping mapping : mappings) {
+            if (mapping.isExclude() || mapping.getSetter() == null) {
+                continue;
+            }
+            
             Accessor setter = mapping.getSetter();
             String setterMethod = setter.getMethodName();
 
@@ -62,49 +64,19 @@ public class GetterSetterMapperGenerator implements MapperGenerator {
             MemberRefInfo converter = mapping.getConverter();
             ConstantValue constantSrc = mapping.getConstant();
 
-            if (mapping.getConverter() == null) {
-                if (constantSrc != null) {
-                    String value = constantSrc.getValue();
-                    if (value != null) {
-                        mapMethod.addStatement("dst.$L($L)", setterMethod, value);
-                    } else {
-                        Fqcn constantType = constantSrc.getType();
-                        String constName = constantSrc.getStaticFieldName();
-                        if (constantType != null && constName != null) {
-                            mapMethod.addStatement("dst.$L($T.$L)", setterMethod,
-                                    ClassName.get(constantType.packageName(), constantType.className()),
-                                    constName);
-                        }
-                    }
+            // Retrieve value code block
+            CodeBlock retrieveValueCode = generateValueRetrievalCode(constantSrc, getter, getterMethod);
 
-                } else if (getter == null) {
-                    // src.this
-                    mapMethod.addStatement("dst.$L(src)", setterMethod);
-                } else {
-                    mapMethod.addStatement("dst.$L(src.$L())", setterMethod, getterMethod);
-                }
-            } else {
-                String converterDefinitionName = setter.getName() + "Converter";
-                TypeName converterType = ParameterizedTypeName.get(
-                        ClassName.get(Function.class),
-                        getter == null ? srcType : ClassName.get(getter.getValueType()),
-                        ClassName.get(setter.getValueType())
-                );
+            // Apply cloning if needed
+            retrieveValueCode = generateCloneCode(src, mapping, getter, retrieveValueCode);
 
-                FieldSpec converterField = FieldSpec.builder(converterType, converterDefinitionName)
-                        .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
-                        .initializer("$L", methodRefCode(converter))
-                        .build();
+            // Apply converter if present
+            retrieveValueCode = generateConvertCode(converter, setter, getter, srcType, fields, retrieveValueCode);
 
-                fields.add(converterField);
+            // Set property statement
+            CodeBlock setPropertyStatement = generateSetCode(setterMethod, retrieveValueCode);
 
-                if (getter == null) {
-                    // src.this with converter
-                    mapMethod.addStatement("dst.$L($L.apply(src))", setterMethod, converterDefinitionName);
-                } else {
-                    mapMethod.addStatement("dst.$L($L.apply(src.$L()))", setterMethod, converterDefinitionName, getterMethod);
-                }
-            }
+            mapMethod.addStatement(setPropertyStatement);
         }
 
         mapMethod.addStatement("return dst");
@@ -126,4 +98,9 @@ public class GetterSetterMapperGenerator implements MapperGenerator {
 
         return javaFile::writeTo;
     }
+
+    private static CodeBlock generateSetCode(String setterMethod, CodeBlock retrieveValueCode) {
+        return CodeBlock.of("dst.$L($L)", setterMethod, retrieveValueCode);
+    }
+
 }

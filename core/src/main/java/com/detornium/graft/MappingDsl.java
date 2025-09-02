@@ -50,6 +50,8 @@ public class MappingDsl<S, D> {
         <RD extends Record> void to(Getter<RD, V> recordField);
 
         <R> MapChainTo<D, R> converting(Converter<V, R> conv);
+
+        MapChainTo<D, V> copy();
     }
 
     public interface MapChainTo<D, V> {
