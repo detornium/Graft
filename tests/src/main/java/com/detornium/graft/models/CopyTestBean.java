@@ -15,9 +15,12 @@
  */
 package com.detornium.graft.models;
 
+import lombok.Data;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentMap;
 
+@Data
 public class CopyTestBean {
     private CloneableObject object;
     private List<String> list;
@@ -28,76 +31,4 @@ public class CopyTestBean {
     private SortedMap<String, String> sortedMap;
     private NavigableMap<String, String> navigableMap;
     private int[] array;
-
-    public CloneableObject getObject() {
-        return object;
-    }
-
-    public void setObject(CloneableObject object) {
-        this.object = object;
-    }
-
-    public List<String> getList() {
-        return list;
-    }
-
-    public void setList(List<String> list) {
-        this.list = list;
-    }
-
-    public Set<Integer> getSet() {
-        return set;
-    }
-
-    public void setSet(Set<Integer> set) {
-        this.set = set;
-    }
-
-    public SortedSet<Integer> getSortedSet() {
-        return sortedSet;
-    }
-
-    public void setSortedSet(SortedSet<Integer> sortedSet) {
-        this.sortedSet = sortedSet;
-    }
-
-    public Map<String, String> getMap() {
-        return map;
-    }
-
-    public void setMap(Map<String, String> map) {
-        this.map = map;
-    }
-
-    public ConcurrentMap<String, String> getConcurrentMap() {
-        return concurrentMap;
-    }
-
-    public void setConcurrentMap(ConcurrentMap<String, String> concurrentMap) {
-        this.concurrentMap = concurrentMap;
-    }
-
-    public SortedMap<String, String> getSortedMap() {
-        return sortedMap;
-    }
-
-    public void setSortedMap(SortedMap<String, String> sortedMap) {
-        this.sortedMap = sortedMap;
-    }
-
-    public NavigableMap<String, String> getNavigableMap() {
-        return navigableMap;
-    }
-
-    public void setNavigableMap(NavigableMap<String, String> navigableMap) {
-        this.navigableMap = navigableMap;
-    }
-
-    public int[] getArray() {
-        return array;
-    }
-
-    public void setArray(int[] array) {
-        this.array = array;
-    }
 }

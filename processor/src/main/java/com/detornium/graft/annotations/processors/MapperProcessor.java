@@ -22,6 +22,7 @@ import com.detornium.graft.annotations.processors.generators.DestRecordMapperGen
 import com.detornium.graft.annotations.processors.generators.GetterSetterMapperGenerator;
 import com.detornium.graft.annotations.processors.generators.MapperGenerator;
 import com.detornium.graft.annotations.processors.models.*;
+import com.detornium.graft.annotations.processors.spi.ClassReadyCheck;
 import com.detornium.graft.annotations.processors.utils.BeanIntrospector;
 import com.detornium.graft.annotations.processors.utils.ProcessingUtils;
 import com.sun.source.tree.*;
@@ -34,7 +35,6 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
-import javax.lang.model.util.Elements;
 import javax.tools.Diagnostic;
 import java.util.*;
 import java.util.function.Function;
@@ -44,7 +44,6 @@ import java.util.stream.Stream;
 import static com.detornium.graft.annotations.processors.utils.Helpers.*;
 import static com.detornium.graft.annotations.processors.utils.MappingUtils.*;
 
-//@AutoService(Processor.class)
 @SupportedAnnotationTypes("com.detornium.graft.annotations.MappingSpec")
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class MapperProcessor extends AbstractProcessor {
@@ -69,7 +68,6 @@ public class MapperProcessor extends AbstractProcessor {
     private static final String TO_INSTR = "to";
     private static final String EXCLUDE_INSTR = "exclude";
 
-    private Elements elements;
     private Filer filer;
     private Trees trees;
 
@@ -80,7 +78,6 @@ public class MapperProcessor extends AbstractProcessor {
     public synchronized void init(ProcessingEnvironment env) {
         super.init(env);
 
-        elements = env.getElementUtils();
         filer = env.getFiler();
         trees = Trees.instance(env);
 
@@ -88,48 +85,114 @@ public class MapperProcessor extends AbstractProcessor {
         processingUtils = new ProcessingUtils(processingEnv);
     }
 
+    private final List<MapperInfo> processList = new ArrayList<>();
+
     @Override
     public boolean process(Set<? extends TypeElement> anns, RoundEnvironment roundEnv) {
-        for (Element e : roundEnv.getElementsAnnotatedWith(MappingSpec.class)) {
-            if (!(e instanceof TypeElement spec)) {
-                error(e, "@%s can only be applied to classes.".formatted(MappingSpec.class.getSimpleName()));
+        if (processList.isEmpty()) {
+            List<MapperInfo> result = findClassesToProcess(roundEnv);
+            processList.addAll(result);
+        }
+
+        for (MapperInfo mapperInfo : processList) {
+            if (mapperInfo.isProcessed()
+                    || !checkIfTypesAreAvailable(mapperInfo.getSrcType(), mapperInfo.getTargetType())) {
                 continue;
             }
 
             try {
-                MappingSpec meta = e.getAnnotation(MappingSpec.class);
+                List<Mapping> mappings = processMappings(mapperInfo.getSpec(), mapperInfo.getSrcType(), mapperInfo.getTargetType());
 
-                DeclaredType st = findSuperclass(spec, MappingDsl.class, 2)
-                        .orElseThrow(() -> new ProcessingException(spec, "Class must extend MappingDsl<S,D>."));
-
-                TypeElement src = declaredTypeMirrorToTypeElement(st.getTypeArguments().get(0))
-                        .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve source type S."));
-
-                TypeElement dst = declaredTypeMirrorToTypeElement(st.getTypeArguments().get(1))
-                        .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve destination type D."));
-
-                Fqcn mapperFqcn = getAnnotationClassValue(
-                        meta,
-                        MappingSpec::value,
-                        c -> Optional.<Fqcn>empty(), // error target class already exists
-                        tm -> processingUtils.resolveTypeFqcn(tm, spec))
-                        .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve mapper class from @MappingSpec."));
-
-                List<Mapping> mappings = processMappings(spec, src, dst);
-
-                MapperGenerator mapperGenerator = isRecord(dst)
+                MapperGenerator mapperGenerator = isRecord(mapperInfo.getTargetType())
                         ? new DestRecordMapperGenerator()
                         : new GetterSetterMapperGenerator();
 
-                mapperGenerator.generate(mapperFqcn, src, dst, mappings)
+                mapperGenerator.generate(mapperInfo.getMapperType(), mapperInfo.getSrcType(), mapperInfo.getTargetType(), mappings)
                         .writeTo(filer);
 
             } catch (ProcessingException procEx) {
                 error(procEx.getElement(), "Processor failure: " + procEx.getMessage());
             } catch (Exception ex) {
-                error(e, "Processor failure: " + ex.getMessage());
+                error(mapperInfo.getSpec(), "Processor failure: " + ex.getMessage());
+            } finally {
+                mapperInfo.setProcessed(true);
             }
         }
+
+        // Final round, check for unprocessed items
+        if (roundEnv.processingOver()) {
+            List<String> unprocessed = processList.stream()
+                    .filter(m -> !m.isProcessed())
+                    .map(m -> m.getSpec().getQualifiedName().toString())
+                    .toList();
+            if (!unprocessed.isEmpty()) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
+                        "Some mapping specifications could not be processed due to missing types: "
+                                + String.join(", ", unprocessed));
+            }
+        }
+
+
+        return true;
+    }
+
+    private List<MapperInfo> findClassesToProcess(RoundEnvironment roundEnv) {
+        List<MapperInfo> result = new LinkedList<>();
+
+        for (Element e : roundEnv.getElementsAnnotatedWith(MappingSpec.class)) {
+            try {
+                result.add(analyzeAnnotatedElement(e));
+            } catch (ProcessingException procEx) {
+                error(procEx.getElement(), "Processor failure: " + procEx.getMessage());
+            }
+        }
+
+        return result;
+    }
+
+    private MapperInfo analyzeAnnotatedElement(Element e) throws ProcessingException {
+        if (!(e instanceof TypeElement spec)) {
+            throw new ProcessingException(e, "@%s can only be applied to classes.".formatted(MappingSpec.class.getSimpleName()));
+        }
+
+        MappingSpec meta = spec.getAnnotation(MappingSpec.class);
+
+        DeclaredType st = findSuperclass(spec, MappingDsl.class, 2)
+                .orElseThrow(() -> new ProcessingException(spec, "Class must extend MappingDsl<S,D>."));
+
+        TypeElement src = declaredTypeMirrorToTypeElement(st.getTypeArguments().get(0))
+                .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve source type S."));
+
+        TypeElement dst = declaredTypeMirrorToTypeElement(st.getTypeArguments().get(1))
+                .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve destination type D."));
+
+        Fqcn mapperFqcn = getAnnotationClassValue(
+                meta,
+                MappingSpec::value,
+                c -> Optional.<Fqcn>empty(), // error target class already exists
+                tm -> processingUtils.resolveTypeFqcn(tm, spec))
+                .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve mapper class from @MappingSpec."));
+
+        return MapperInfo.builder()
+                .spec(spec)
+                .mapperType(mapperFqcn)
+                .srcType(src)
+                .targetType(dst)
+                .processed(false)
+                .build();
+    }
+
+    private boolean checkIfTypesAreAvailable(TypeElement... types) {
+        ServiceLoader<ClassReadyCheck> serviceLoader = ServiceLoader.load(ClassReadyCheck.class, getClass().getClassLoader());
+
+        for (TypeElement type : types) {
+            for (ClassReadyCheck check : serviceLoader) {
+                if (!check.isClassReady(type.asType())) {
+                    return false;
+                }
+            }
+        }
+
         return true;
     }
 
