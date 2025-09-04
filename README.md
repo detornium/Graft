@@ -132,9 +132,53 @@ Semantics
 
 ---
 
+## Lombok Binding (SPI)
+
+If you use **Lombok** (e.g., `@Getter`, `@Setter`, `@Builder`), add the optional **Graft Lombok Binding**.  
+It integrates via a small **SPI** so Graft can detect when Lombok has finished AST changes and correctly discover generated getters/setters/builders during code generation.
+
+### Why you might need it
+
+- Without the binding, Graft may analyze a type **before** Lombok has injected members, leading to “getter/setter not found” diagnostics.
+
+- With the binding, Graft defers until the type is **complete**, then generates code.
+
+
+### Maven (simple setup)
+
+Add the following dependencies (compile your API; put processors/bindings on the compile classpath):
+
+```xml
+<dependency>
+  <groupId>com.detornium.graft</groupId>
+  <artifactId>core</artifactId>
+  <version>1.0-SNAPSHOT</version>
+</dependency>
+<dependency>
+  <groupId>com.detornium.graft</groupId>
+  <artifactId>processor</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <scope>provided</scope>
+</dependency>
+<dependency>
+  <groupId>com.detornium.graft</groupId>
+  <artifactId>graft-lombok-binding</artifactId>
+  <version>1.0-SNAPSHOT</version>
+  <scope>provided</scope>
+</dependency>
+<dependency>
+  <groupId>org.projectlombok</groupId>
+  <artifactId>lombok</artifactId>
+  <version>1.18.30</version>
+  <scope>provided</scope>
+</dependency>
+```
+
+---
+
 ## Roadmap (PoC)
 
-- [ ] Lombok binding SPI
+- [x] Lombok binding SPI
 - [ ] Better diagnostics & source ranges
 - [ ] Lambda lifting for `converting(...)`
 - [ ] Collection/array mapping options
