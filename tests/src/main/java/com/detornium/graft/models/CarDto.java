@@ -16,8 +16,11 @@
 
 package com.detornium.graft.models;
 
+import lombok.Data;
+
 import java.util.Collection;
 
+@Data
 public class CarDto {
     private String color;
     private String carModel;
@@ -29,38 +32,6 @@ public class CarDto {
     private String notes;
 
     private Collection<String> previousOwners;
-
-    public String getColor() {
-        return color;
-    }
-
-    public void setColor(String color) {
-        this.color = color;
-    }
-
-    public String getCarModel() {
-        return carModel;
-    }
-
-    public void setCarModel(String carModel) {
-        this.carModel = carModel;
-    }
-
-    public String getVersion() {
-        return version;
-    }
-
-    public void setVersion(String version) {
-        this.version = version;
-    }
-
-    public String getOwner() {
-        return owner;
-    }
-
-    public void setOwner(String owner) {
-        this.owner = owner;
-    }
 
     public String getDescription() {
         return description;

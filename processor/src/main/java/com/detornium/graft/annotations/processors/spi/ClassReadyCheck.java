@@ -13,18 +13,10 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+package com.detornium.graft.annotations.processors.spi;
 
-package com.detornium.graft.models;
+import javax.lang.model.type.TypeMirror;
 
-import lombok.Data;
-
-import java.util.List;
-
-@Data
-public class Car {
-    private String color;
-    private String model;
-    private Integer version;
-
-    private List<String> prevOwners;
+public interface ClassReadyCheck {
+    boolean isClassReady(TypeMirror type);
 }

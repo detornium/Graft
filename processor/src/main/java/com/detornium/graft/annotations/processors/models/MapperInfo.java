@@ -13,18 +13,19 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+package com.detornium.graft.annotations.processors.models;
 
-package com.detornium.graft.models;
-
+import lombok.Builder;
 import lombok.Data;
 
-import java.util.List;
+import javax.lang.model.element.TypeElement;
 
 @Data
-public class Car {
-    private String color;
-    private String model;
-    private Integer version;
-
-    private List<String> prevOwners;
+@Builder
+public class MapperInfo {
+    private TypeElement spec;
+    private Fqcn mapperType;
+    private TypeElement srcType;
+    private TypeElement targetType;
+    private boolean processed;
 }
