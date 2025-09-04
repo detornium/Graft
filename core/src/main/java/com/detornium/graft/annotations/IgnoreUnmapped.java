@@ -13,10 +13,7 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
-
 package com.detornium.graft.annotations;
-
-import com.detornium.graft.Mapper;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -24,13 +21,14 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Specifies that a mapper should be generated based on the annotated mapping spec class.
- * The annotated class should extend MappingDsl<S, D> where S is the source type and D is the destination type.
- * The generated mapper will implement Mapper<S, D>.
+ * Indicates that unmapped fields in the destination type should be ignored.
+ * When applied to a mapping spec class, the generated mapper will not raise errors or warnings
+ * for any fields in the destination type that are not explicitly mapped from the source type.
  * <p>
- * Example usage:
+ * Usage:
  * <pre>
  * {@code
+ * @IgnoreUnmapped
  * @MappingSpec(com.example.MyMapper.class)
  * class MyMapperSpec extends MappingDsl<SourceType, DestinationType> {
  *     {
@@ -38,19 +36,11 @@ import java.lang.annotation.Target;
  *         // additional mappings...
  *     }
  * }
- * }
  * </pre>
+ * <p>
+ * * The annotation can be applied at the class level only.
  */
-@Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)
-public @interface MappingSpec {
-
-    /**
-     * Specifies the mapper class to be generated.
-     * Can be provided as a fully qualified class name (e.g. com.example.MyMapper.class)
-     * or as an imported simple class name (e.g. MyMapper.class).
-     * If the package is not specified, the package of the annotated class is used.
-     */
-    Class<? extends Mapper<?, ?>> value();
-
+@Retention(RetentionPolicy.SOURCE)
+public @interface IgnoreUnmapped {
 }

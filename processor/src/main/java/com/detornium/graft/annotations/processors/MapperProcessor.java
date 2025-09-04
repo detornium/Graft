@@ -17,6 +17,7 @@
 package com.detornium.graft.annotations.processors;
 
 import com.detornium.graft.MappingDsl;
+import com.detornium.graft.annotations.IgnoreUnmapped;
 import com.detornium.graft.annotations.MappingSpec;
 import com.detornium.graft.annotations.processors.generators.DestRecordMapperGenerator;
 import com.detornium.graft.annotations.processors.generators.GetterSetterMapperGenerator;
@@ -96,18 +97,18 @@ public class MapperProcessor extends AbstractProcessor {
 
         for (MapperInfo mapperInfo : processList) {
             if (mapperInfo.isProcessed()
-                    || !checkIfTypesAreAvailable(mapperInfo.getSrcType(), mapperInfo.getTargetType())) {
+                    || !checkIfTypesAreAvailable(mapperInfo.getSourceType(), mapperInfo.getTargetType())) {
                 continue;
             }
 
             try {
-                List<Mapping> mappings = processMappings(mapperInfo.getSpec(), mapperInfo.getSrcType(), mapperInfo.getTargetType());
+                List<Mapping> mappings = processMappings(mapperInfo);
 
                 MapperGenerator mapperGenerator = isRecord(mapperInfo.getTargetType())
                         ? new DestRecordMapperGenerator()
                         : new GetterSetterMapperGenerator();
 
-                mapperGenerator.generate(mapperInfo.getMapperType(), mapperInfo.getSrcType(), mapperInfo.getTargetType(), mappings)
+                mapperGenerator.generate(mapperInfo.getMapperType(), mapperInfo.getSourceType(), mapperInfo.getTargetType(), mappings)
                         .writeTo(filer);
 
             } catch (ProcessingException procEx) {
@@ -173,11 +174,15 @@ public class MapperProcessor extends AbstractProcessor {
                 tm -> processingUtils.resolveTypeFqcn(tm, spec))
                 .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve mapper class from @MappingSpec."));
 
+        boolean ignoreUnmapped = spec.getAnnotationMirrors().stream()
+                .anyMatch(am -> am.getAnnotationType().toString().equals(IgnoreUnmapped.class.getCanonicalName()));
+
         return MapperInfo.builder()
                 .spec(spec)
                 .mapperType(mapperFqcn)
-                .srcType(src)
+                .sourceType(src)
                 .targetType(dst)
+                .ignoreUnmapped(ignoreUnmapped)
                 .processed(false)
                 .build();
     }
@@ -196,22 +201,26 @@ public class MapperProcessor extends AbstractProcessor {
         return true;
     }
 
-    private List<Mapping> processMappings(TypeElement spec, TypeElement src, TypeElement dst) throws ProcessingException {
-        List<Accessor> getters = isRecord(src)
-                ? beanIntrospector.getAccessors(src, Accessor.AccessorType.RECORD_FIELD)
-                : beanIntrospector.getAccessors(src, Accessor.AccessorType.GETTER);
+    private List<Mapping> processMappings(MapperInfo mapperInfo) throws ProcessingException {
+        TypeElement spec = mapperInfo.getSpec();
+        TypeElement source = mapperInfo.getSourceType();
+        TypeElement target = mapperInfo.getTargetType();
 
-        List<Accessor> setters = isRecord(dst)
-                ? beanIntrospector.getAccessors(dst, Accessor.AccessorType.RECORD_FIELD)
-                : beanIntrospector.getAccessors(dst, Accessor.AccessorType.SETTER);
+        List<Accessor> getters = isRecord(source)
+                ? beanIntrospector.getAccessors(source, Accessor.AccessorType.RECORD_FIELD)
+                : beanIntrospector.getAccessors(source, Accessor.AccessorType.GETTER);
 
-        List<Mapping> mappings = parseMappingsFromInitializers(spec, src, dst);
+        List<Accessor> setters = isRecord(target)
+                ? beanIntrospector.getAccessors(target, Accessor.AccessorType.RECORD_FIELD)
+                : beanIntrospector.getAccessors(target, Accessor.AccessorType.SETTER);
+
+        List<Mapping> mappings = parseMappingsFromInitializers(spec, source, target);
         List<Mapping> autoMappings = createAutoMappings(getters, setters);
         List<Mapping> allMappings = mergeMappings(mappings, autoMappings);
 
         List<String> unmapped = findUnmappedFields(allMappings, setters);
-        if (!unmapped.isEmpty()) {
-            throw new ProcessingException(spec, "Some destination fields are not mapped: " + String.join(", ", unmapped));
+        if (!mapperInfo.isIgnoreUnmapped() && !unmapped.isEmpty()) {
+            throw new ProcessingException(spec, "Some target fields are not mapped: " + String.join(", ", unmapped));
         }
 
         return allMappings;
