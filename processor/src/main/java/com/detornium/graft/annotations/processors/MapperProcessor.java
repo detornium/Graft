@@ -17,6 +17,7 @@
 package com.detornium.graft.annotations.processors;
 
 import com.detornium.graft.MappingDsl;
+import com.detornium.graft.annotations.DisableAutoMapping;
 import com.detornium.graft.annotations.IgnoreUnmapped;
 import com.detornium.graft.annotations.MappingSpec;
 import com.detornium.graft.annotations.processors.generators.DestRecordMapperGenerator;
@@ -86,37 +87,37 @@ public class MapperProcessor extends AbstractProcessor {
         processingUtils = new ProcessingUtils(processingEnv);
     }
 
-    private final List<MapperInfo> processList = new ArrayList<>();
+    private final List<MappingContext> processList = new ArrayList<>();
 
     @Override
     public boolean process(Set<? extends TypeElement> anns, RoundEnvironment roundEnv) {
         if (processList.isEmpty()) {
-            List<MapperInfo> result = findClassesToProcess(roundEnv);
+            List<MappingContext> result = findClassesToProcess(roundEnv);
             processList.addAll(result);
         }
 
-        for (MapperInfo mapperInfo : processList) {
-            if (mapperInfo.isProcessed()
-                    || !checkIfTypesAreAvailable(mapperInfo.getSourceType(), mapperInfo.getTargetType())) {
+        for (MappingContext mappingContext : processList) {
+            if (mappingContext.isProcessed()
+                    || !checkIfTypesAreAvailable(mappingContext.getSourceType(), mappingContext.getTargetType())) {
                 continue;
             }
 
             try {
-                List<Mapping> mappings = processMappings(mapperInfo);
+                List<Mapping> mappings = processMappings(mappingContext);
 
-                MapperGenerator mapperGenerator = isRecord(mapperInfo.getTargetType())
+                MapperGenerator mapperGenerator = isRecord(mappingContext.getTargetType())
                         ? new DestRecordMapperGenerator()
                         : new GetterSetterMapperGenerator();
 
-                mapperGenerator.generate(mapperInfo.getMapperType(), mapperInfo.getSourceType(), mapperInfo.getTargetType(), mappings)
+                mapperGenerator.generate(mappingContext.getMapperType(), mappingContext.getSourceType(), mappingContext.getTargetType(), mappings)
                         .writeTo(filer);
 
             } catch (ProcessingException procEx) {
                 error(procEx.getElement(), "Processor failure: " + procEx.getMessage());
             } catch (Exception ex) {
-                error(mapperInfo.getSpec(), "Processor failure: " + ex.getMessage());
+                error(mappingContext.getSpec(), "Processor failure: " + ex.getMessage());
             } finally {
-                mapperInfo.setProcessed(true);
+                mappingContext.setProcessed(true);
             }
         }
 
@@ -137,8 +138,8 @@ public class MapperProcessor extends AbstractProcessor {
         return true;
     }
 
-    private List<MapperInfo> findClassesToProcess(RoundEnvironment roundEnv) {
-        List<MapperInfo> result = new LinkedList<>();
+    private List<MappingContext> findClassesToProcess(RoundEnvironment roundEnv) {
+        List<MappingContext> result = new LinkedList<>();
 
         for (Element e : roundEnv.getElementsAnnotatedWith(MappingSpec.class)) {
             try {
@@ -151,7 +152,7 @@ public class MapperProcessor extends AbstractProcessor {
         return result;
     }
 
-    private MapperInfo analyzeAnnotatedElement(Element e) throws ProcessingException {
+    private MappingContext analyzeAnnotatedElement(Element e) throws ProcessingException {
         if (!(e instanceof TypeElement spec)) {
             throw new ProcessingException(e, "@%s can only be applied to classes.".formatted(MappingSpec.class.getSimpleName()));
         }
@@ -164,8 +165,8 @@ public class MapperProcessor extends AbstractProcessor {
         TypeElement src = declaredTypeMirrorToTypeElement(st.getTypeArguments().get(0))
                 .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve source type S."));
 
-        TypeElement dst = declaredTypeMirrorToTypeElement(st.getTypeArguments().get(1))
-                .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve destination type D."));
+        TypeElement target = declaredTypeMirrorToTypeElement(st.getTypeArguments().get(1))
+                .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve target type D."));
 
         Fqcn mapperFqcn = getAnnotationClassValue(
                 meta,
@@ -174,15 +175,16 @@ public class MapperProcessor extends AbstractProcessor {
                 tm -> processingUtils.resolveTypeFqcn(tm, spec))
                 .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve mapper class from @MappingSpec."));
 
-        boolean ignoreUnmapped = spec.getAnnotationMirrors().stream()
-                .anyMatch(am -> am.getAnnotationType().toString().equals(IgnoreUnmapped.class.getCanonicalName()));
+        boolean ignoreUnmapped = spec.getAnnotation(IgnoreUnmapped.class) != null;
+        boolean disableAutoMapping = spec.getAnnotation(DisableAutoMapping.class) != null;
 
-        return MapperInfo.builder()
+        return MappingContext.builder()
                 .spec(spec)
                 .mapperType(mapperFqcn)
                 .sourceType(src)
-                .targetType(dst)
+                .targetType(target)
                 .ignoreUnmapped(ignoreUnmapped)
+                .disableAutoMapping(disableAutoMapping)
                 .processed(false)
                 .build();
     }
@@ -201,10 +203,10 @@ public class MapperProcessor extends AbstractProcessor {
         return true;
     }
 
-    private List<Mapping> processMappings(MapperInfo mapperInfo) throws ProcessingException {
-        TypeElement spec = mapperInfo.getSpec();
-        TypeElement source = mapperInfo.getSourceType();
-        TypeElement target = mapperInfo.getTargetType();
+    private List<Mapping> processMappings(MappingContext mappingContext) throws ProcessingException {
+        TypeElement spec = mappingContext.getSpec();
+        TypeElement source = mappingContext.getSourceType();
+        TypeElement target = mappingContext.getTargetType();
 
         List<Accessor> getters = isRecord(source)
                 ? beanIntrospector.getAccessors(source, Accessor.AccessorType.RECORD_FIELD)
@@ -215,11 +217,13 @@ public class MapperProcessor extends AbstractProcessor {
                 : beanIntrospector.getAccessors(target, Accessor.AccessorType.SETTER);
 
         List<Mapping> mappings = parseMappingsFromInitializers(spec, source, target);
-        List<Mapping> autoMappings = createAutoMappings(getters, setters);
+        List<Mapping> autoMappings = mappingContext.isDisableAutoMapping()
+                ? List.of()
+                : createAutoMappings(getters, setters);
         List<Mapping> allMappings = mergeMappings(mappings, autoMappings);
 
         List<String> unmapped = findUnmappedFields(allMappings, setters);
-        if (!mapperInfo.isIgnoreUnmapped() && !unmapped.isEmpty()) {
+        if (!mappingContext.isIgnoreUnmapped() && !unmapped.isEmpty()) {
             throw new ProcessingException(spec, "Some target fields are not mapped: " + String.join(", ", unmapped));
         }
 

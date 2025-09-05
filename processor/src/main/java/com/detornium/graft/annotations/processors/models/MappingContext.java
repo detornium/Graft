@@ -22,11 +22,12 @@ import javax.lang.model.element.TypeElement;
 
 @Data
 @Builder
-public class MapperInfo {
+public class MappingContext {
     private TypeElement spec;
     private Fqcn mapperType;
     private TypeElement sourceType;
     private TypeElement targetType;
     private boolean processed;
     private boolean ignoreUnmapped;
+    private boolean disableAutoMapping;
 }
