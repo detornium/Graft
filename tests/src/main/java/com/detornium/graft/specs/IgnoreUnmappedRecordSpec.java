@@ -13,20 +13,18 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
-package com.detornium.graft.annotations.processors.models;
+package com.detornium.graft.specs;
 
-import lombok.Builder;
-import lombok.Data;
+import com.detornium.graft.MappingDsl;
+import com.detornium.graft.annotations.IgnoreUnmapped;
+import com.detornium.graft.annotations.MappingSpec;
+import com.detornium.graft.models.Car;
+import com.detornium.graft.models.CarDtoRecord;
 
-import javax.lang.model.element.TypeElement;
-
-@Data
-@Builder
-public class MapperInfo {
-    private TypeElement spec;
-    private Fqcn mapperType;
-    private TypeElement sourceType;
-    private TypeElement targetType;
-    private boolean processed;
-    private boolean ignoreUnmapped;
+@IgnoreUnmapped
+@MappingSpec(com.detornium.graft.mappers.IgnoreUnmappedRecordMapper.class)
+public class IgnoreUnmappedRecordSpec extends MappingDsl<Car, CarDtoRecord> {
+    {
+        map(Car::getModel).to(CarDtoRecord::carModel);
+    }
 }
