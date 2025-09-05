@@ -158,6 +158,22 @@ public class IgnoreUnmappedSpec extends MappingDsl<Car, CarDto> {
 }
 ```
 
+### `@DisableAutoMapping`
+
+Disables **automatic by-name** mapping for properties. When present, only properties you map explicitly in the DSL (e.g., `map(...).to(...)`) will be considered; same-name properties won’t be auto-mapped. Typically combined with `@IgnoreUnmapped` if you want a strict, **whitelist-only** spec.
+
+```java
+@DisableAutoMapping
+@IgnoreUnmapped
+@MappingSpec(com.detornium.graft.mappers.DisableAutoMappingMapper.class)
+public class DisableAutoMappingSpec extends MappingDsl<Car, Car> {
+    {
+        map(Car::getVersion).to(Car::setVersion);
+    }
+}
+
+```
+
 ---
 
 ## Lombok Binding (SPI)
