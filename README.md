@@ -132,6 +132,34 @@ Semantics
 
 ---
 
+## Annotations
+
+### `@MappingSpec`
+
+Marks a mapping **spec** class and declares the fully-qualified name of the **generated mapper**.
+
+```java
+@MappingSpec(com.detornium.graft.mappers.CarToCarDtoMapper.class)
+public class CarToCarDtoMapperSpec extends MappingDsl<Car, CarDto> { /* ... */ }
+```
+
+### `@IgnoreUnmapped`
+
+Suppresses errors/warnings about target properties that are **not explicitly mapped**.
+
+```java
+@IgnoreUnmapped
+@MappingSpec(com.detornium.graft.mappers.IgnoreUnmappedMapper.class)
+public class IgnoreUnmappedSpec extends MappingDsl<Car, CarDto> {
+    {
+        map(Car::getModel).to(CarDto::setCarModel);
+        // Other CarDto properties will be ignored instead of reported.
+    }
+}
+```
+
+---
+
 ## Lombok Binding (SPI)
 
 If you use **Lombok** (e.g., `@Getter`, `@Setter`, `@Builder`), add the optional **Graft Lombok Binding**.  
