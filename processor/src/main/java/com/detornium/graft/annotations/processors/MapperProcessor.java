@@ -16,387 +16,84 @@
 
 package com.detornium.graft.annotations.processors;
 
-import com.detornium.graft.MappingDsl;
-import com.detornium.graft.annotations.DisableAutoMapping;
-import com.detornium.graft.annotations.IgnoreUnmapped;
 import com.detornium.graft.annotations.MappingSpec;
-import com.detornium.graft.annotations.processors.generators.DestRecordMapperGenerator;
-import com.detornium.graft.annotations.processors.generators.GetterSetterMapperGenerator;
-import com.detornium.graft.annotations.processors.generators.MapperGenerator;
-import com.detornium.graft.annotations.processors.models.*;
-import com.detornium.graft.annotations.processors.spi.ClassReadyCheck;
-import com.detornium.graft.annotations.processors.utils.BeanIntrospector;
-import com.detornium.graft.annotations.processors.utils.ProcessingUtils;
-import com.sun.source.tree.*;
-import com.sun.source.util.Trees;
+import com.detornium.graft.annotations.processors.models.MappingContext;
+import com.detornium.graft.annotations.processors.phases.*;
 
 import javax.annotation.processing.*;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
-import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
-import static com.detornium.graft.annotations.processors.utils.Helpers.*;
-import static com.detornium.graft.annotations.processors.utils.MappingUtils.*;
+import static java.util.function.Predicate.not;
 
 @SupportedAnnotationTypes("com.detornium.graft.annotations.MappingSpec")
 @SupportedSourceVersion(SourceVersion.RELEASE_17)
 public class MapperProcessor extends AbstractProcessor {
 
-    // TODO: use tree for possible combinations hint
-    private static final List<List<String>> ALLOWED_CALL_CHAIN = List.of(
-            List.of("map", "to"),
-            List.of("map", "converting", "to"),
-            List.of("exclude"),
-            List.of("self", "to"),
-            List.of("self", "converting", "to"),
-            List.of("value", "to"),
-            List.of("self", "copy", "to"),
-            List.of("map", "copy", "to")
-    );
+    private ProcessingPhase processingChain;
+    private final List<MappingContext> processingContexts = new ArrayList<>();
 
-    private static final String MAP_INSTR = "map";
-    private static final String VALUE_INSTR = "value";
-    private static final String SELF_INSTR = "self";
-    private static final String COPY_INSTR = "copy";
-    private static final String CONVERTING_INSTR = "converting";
-    private static final String TO_INSTR = "to";
-    private static final String EXCLUDE_INSTR = "exclude";
-
-    private Filer filer;
-    private Trees trees;
-
-    private BeanIntrospector beanIntrospector;
-    private ProcessingUtils processingUtils;
 
     @Override
     public synchronized void init(ProcessingEnvironment env) {
         super.init(env);
 
-        filer = env.getFiler();
-        trees = Trees.instance(env);
-
-        beanIntrospector = new BeanIntrospector(processingEnv);
-        processingUtils = new ProcessingUtils(processingEnv);
+        processingChain = new InitPhase(processingEnv)
+                .andThen(new AnalyzeDependenciesPhase())
+                .andThen(new ProcessMappingsPhase(processingEnv))
+                .andThen(new MapperGenerationPhase(processingEnv));
     }
-
-    private final List<MappingContext> processList = new ArrayList<>();
 
     @Override
     public boolean process(Set<? extends TypeElement> anns, RoundEnvironment roundEnv) {
-        if (processList.isEmpty()) {
-            List<MappingContext> result = findClassesToProcess(roundEnv);
-            processList.addAll(result);
+        if (processingContexts.isEmpty()) {
+            processingContexts.addAll(initContexts(roundEnv));
         }
 
-        for (MappingContext mappingContext : processList) {
-            if (mappingContext.isProcessed()
-                    || !checkIfTypesAreAvailable(mappingContext.getSourceType(), mappingContext.getTargetType())) {
+        for (MappingContext mappingContext : processingContexts) {
+            if (mappingContext.isProcessed()) {
                 continue;
             }
 
             try {
-                List<Mapping> mappings = processMappings(mappingContext);
-
-                MapperGenerator mapperGenerator = isRecord(mappingContext.getTargetType())
-                        ? new DestRecordMapperGenerator()
-                        : new GetterSetterMapperGenerator();
-
-                mapperGenerator.generate(mappingContext.getMapperType(), mappingContext.getSourceType(), mappingContext.getTargetType(), mappings)
-                        .writeTo(filer);
-
-            } catch (ProcessingException procEx) {
-                error(procEx.getElement(), "Processor failure: " + procEx.getMessage());
-            } catch (Exception ex) {
-                error(mappingContext.getSpec(), "Processor failure: " + ex.getMessage());
-            } finally {
+                processingChain.process(mappingContext);
                 mappingContext.setProcessed(true);
+            } catch (ClassNotReadyException ignored) {
+            } catch (ProcessingException processingException) {
+                mappingContext.setProcessed(true);
+                error(processingException.getElement(), "Processing failure: " + processingException.getMessage());
+            } catch (Exception ex) {
+                mappingContext.setProcessed(true);
+                error(mappingContext.getSpec(), "Processor failure: " + ex.getMessage());
             }
         }
 
         // Final round, check for unprocessed items
         if (roundEnv.processingOver()) {
-            List<String> unprocessed = processList.stream()
-                    .filter(m -> !m.isProcessed())
-                    .map(m -> m.getSpec().getQualifiedName().toString())
-                    .toList();
-            if (!unprocessed.isEmpty()) {
-                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR,
-                        "Some mapping specifications could not be processed due to missing types: "
-                                + String.join(", ", unprocessed));
-            }
+            processingContexts.stream()
+                    .filter(not(MappingContext::isProcessed))
+                    .map(MappingContext::getSpec)
+                    .forEach(spec -> error(spec, "Could not process mapping specification due to unresolved dependencies."));
         }
 
+        // Remove processed items
+        processingContexts.removeIf(MappingContext::isProcessed);
 
         return true;
     }
 
-    private List<MappingContext> findClassesToProcess(RoundEnvironment roundEnv) {
-        List<MappingContext> result = new LinkedList<>();
-
-        for (Element e : roundEnv.getElementsAnnotatedWith(MappingSpec.class)) {
-            try {
-                result.add(analyzeAnnotatedElement(e));
-            } catch (ProcessingException procEx) {
-                error(procEx.getElement(), "Processor failure: " + procEx.getMessage());
-            }
-        }
-
-        return result;
-    }
-
-    private MappingContext analyzeAnnotatedElement(Element e) throws ProcessingException {
-        if (!(e instanceof TypeElement spec)) {
-            throw new ProcessingException(e, "@%s can only be applied to classes.".formatted(MappingSpec.class.getSimpleName()));
-        }
-
-        MappingSpec meta = spec.getAnnotation(MappingSpec.class);
-
-        DeclaredType st = findSuperclass(spec, MappingDsl.class, 2)
-                .orElseThrow(() -> new ProcessingException(spec, "Class must extend MappingDsl<S,D>."));
-
-        TypeElement src = declaredTypeMirrorToTypeElement(st.getTypeArguments().get(0))
-                .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve source type S."));
-
-        TypeElement target = declaredTypeMirrorToTypeElement(st.getTypeArguments().get(1))
-                .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve target type D."));
-
-        Fqcn mapperFqcn = getAnnotationClassValue(
-                meta,
-                MappingSpec::value,
-                c -> Optional.<Fqcn>empty(), // error target class already exists
-                tm -> processingUtils.resolveTypeFqcn(tm, spec))
-                .orElseThrow(() -> new ProcessingException(spec, "Failed to resolve mapper class from @MappingSpec."));
-
-        boolean ignoreUnmapped = spec.getAnnotation(IgnoreUnmapped.class) != null;
-        boolean disableAutoMapping = spec.getAnnotation(DisableAutoMapping.class) != null;
-
-        return MappingContext.builder()
-                .spec(spec)
-                .mapperType(mapperFqcn)
-                .sourceType(src)
-                .targetType(target)
-                .ignoreUnmapped(ignoreUnmapped)
-                .disableAutoMapping(disableAutoMapping)
-                .processed(false)
-                .build();
-    }
-
-    private boolean checkIfTypesAreAvailable(TypeElement... types) {
-        ServiceLoader<ClassReadyCheck> serviceLoader = ServiceLoader.load(ClassReadyCheck.class, getClass().getClassLoader());
-
-        for (TypeElement type : types) {
-            for (ClassReadyCheck check : serviceLoader) {
-                if (!check.isClassReady(type.asType())) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }
-
-    private List<Mapping> processMappings(MappingContext mappingContext) throws ProcessingException {
-        TypeElement spec = mappingContext.getSpec();
-        TypeElement source = mappingContext.getSourceType();
-        TypeElement target = mappingContext.getTargetType();
-
-        List<Accessor> getters = isRecord(source)
-                ? beanIntrospector.getAccessors(source, Accessor.AccessorType.RECORD_FIELD)
-                : beanIntrospector.getAccessors(source, Accessor.AccessorType.GETTER);
-
-        List<Accessor> setters = isRecord(target)
-                ? beanIntrospector.getAccessors(target, Accessor.AccessorType.RECORD_FIELD)
-                : beanIntrospector.getAccessors(target, Accessor.AccessorType.SETTER);
-
-        List<Mapping> mappings = parseMappingsFromInitializers(spec, source, target);
-        List<Mapping> autoMappings = mappingContext.isDisableAutoMapping()
-                ? List.of()
-                : createAutoMappings(getters, setters);
-        List<Mapping> allMappings = mergeMappings(mappings, autoMappings);
-
-        List<String> unmapped = findUnmappedFields(allMappings, setters);
-        if (!mappingContext.isIgnoreUnmapped() && !unmapped.isEmpty()) {
-            throw new ProcessingException(spec, "Some target fields are not mapped: " + String.join(", ", unmapped));
-        }
-
-        return allMappings;
-    }
-
-    private List<Mapping> parseMappingsFromInitializers(TypeElement spec, TypeElement src, TypeElement dst) throws ProcessingException {
-        Function<ExpressionStatementTree, Mapping> expressionHandler = est -> {
-            try {
-                return handleExpression(spec, est.getExpression(), src, dst);
-            } catch (ProcessingException e) {
-                error(spec, e.getTree(), e.getMessage());
-                return null;
-            }
-        };
-
-        List<? extends StatementTree> statements = processingUtils.findInitializerBlocks(spec).stream()
-                .map(BlockTree::getStatements)
-                .flatMap(List::stream)
+    private List<MappingContext> initContexts(RoundEnvironment roundEnv) {
+        return roundEnv.getElementsAnnotatedWith(MappingSpec.class).stream()
+                .map(MappingContext::new)
                 .toList();
-
-        List<Mapping> mappings = statements.stream()
-                .filter(ExpressionStatementTree.class::isInstance)
-                .map(ExpressionStatementTree.class::cast)
-                .map(expressionHandler)
-                .filter(Objects::nonNull)
-                .toList();
-
-        if (statements.size() != mappings.size()) {
-            throw new ProcessingException(spec, "All statements in initializer blocks must be mapping specifications.");
-        }
-
-        return mappings;
-    }
-
-    private Mapping handleExpression(TypeElement spec, ExpressionTree expr, TypeElement src, TypeElement dst) throws ProcessingException {
-        if (!(expr instanceof MethodInvocationTree)) {
-            throw new ProcessingException(expr, "Mapping specification must be a method call chain.");
-        }
-
-        List<Call> callChain = buildCallChain((MethodInvocationTree) expr);
-
-        if (!isValidCallChain(callChain)) {
-            throw new ProcessingException(expr, "Invalid method call chain in mapping specification.");
-        }
-
-        Mapping mapping = new Mapping();
-        for (Call call : callChain) {
-            String callName = call.methodName();
-            switch (callName) {
-                case MAP_INSTR -> {
-                    MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
-                            .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
-
-                    ExecutableElement executableElement = memberRefInfo.element();
-                    Accessor getter = resolveGetter(executableElement, src);
-                    mapping.setGetter(getter);
-                }
-                case VALUE_INSTR -> {
-                    ConstantValue constValue = processingUtils.resolveConstantValue(spec, call.argument(0))
-                            .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a constant value."));
-
-                    mapping.setConstant(constValue);
-                }
-                case SELF_INSTR -> {
-                    mapping.setGetter(null); // mark as self
-                }
-                case COPY_INSTR -> {
-                    // check if getter return is Cloneable, Map, Collection or array
-                    TypeMirror srcPropertyType = mapping.getGetter() == null
-                            ? src.asType()
-                            : mapping.getGetter().getValueType();
-
-                    if (!isCloneable(srcPropertyType) && !isMap(srcPropertyType)
-                            && !isCollection(srcPropertyType) && !isArray(srcPropertyType)) {
-                        throw new ProcessingException(expr, "Cloning is only supported for Cloneable, Map, Collection or array types.");
-                    }
-
-                    mapping.setCopy(true);
-                }
-                case CONVERTING_INSTR -> {
-                    MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
-                            .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
-
-                    mapping.setConverter(memberRefInfo); // lambda or method ref
-                }
-                case TO_INSTR -> {
-                    MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
-                            .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
-
-                    // TODO: check MemberRefInfo::qualifierType for records
-                    ExecutableElement executableElement = memberRefInfo.element();
-                    Accessor setter = resolveSetter(executableElement, dst);
-                    mapping.setSetter(setter);
-                }
-                case EXCLUDE_INSTR -> {
-                    MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
-                            .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
-
-                    // TODO: check MemberRefInfo::qualifierType for records
-
-                    ExecutableElement executableElement = memberRefInfo.element();
-
-                    Accessor setter = resolveSetter(executableElement, dst);
-                    mapping.setSetter(setter);
-                    mapping.setExclude(true);
-                }
-                default -> {
-                    throw new ProcessingException(expr, "Unexpected method call '%s' in mapping specification.".formatted(callName));
-                }
-            }
-        }
-
-        return mapping;
-    }
-
-    private Accessor resolveGetter(ExecutableElement executableElement, TypeElement type) {
-        Accessor.AccessorType accessorType = isRecord(type)
-                ? Accessor.AccessorType.RECORD_FIELD
-                : Accessor.AccessorType.GETTER;
-
-        return beanIntrospector.getAccessor(executableElement, accessorType);
-    }
-
-    private Accessor resolveSetter(ExecutableElement executableElement, TypeElement type) {
-        Accessor.AccessorType accessorType = isRecord(type)
-                ? Accessor.AccessorType.RECORD_FIELD
-                : Accessor.AccessorType.SETTER;
-
-        return beanIntrospector.getAccessor(executableElement, accessorType);
-    }
-
-    private List<Call> buildCallChain(MethodInvocationTree expr) {
-        // TODO: refactor
-        List<Call> result = Stream.iterate(expr,
-                        Objects::nonNull,
-                        prev -> prev.getMethodSelect() instanceof MemberSelectTree
-                                ? (MethodInvocationTree) ((MemberSelectTree) prev.getMethodSelect()).getExpression()
-                                : null)
-                .map(call -> new Call(
-                        call.getMethodSelect() instanceof IdentifierTree
-                                ? ((IdentifierTree) call.getMethodSelect()).getName().toString()
-                                : ((MemberSelectTree) call.getMethodSelect()).getIdentifier().toString(),
-                        call.getArguments()
-                ))
-                .collect(Collectors.toList());
-
-        Collections.reverse(result);
-
-        return result;
-    }
-
-    private record Call(String methodName, List<? extends ExpressionTree> arguments) {
-        public ExpressionTree argument(int idx) {
-            return arguments.get(idx);
-        }
-    }
-
-    private boolean isValidCallChain(List<Call> calls) {
-        List<String> callNames = calls.stream()
-                .map(Call::methodName)
-                .toList();
-
-        return ALLOWED_CALL_CHAIN.stream()
-                .anyMatch(allowed -> allowed.equals(callNames));
     }
 
     private void error(Element e, String msg) {
         processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, msg, e);
-    }
-
-    private void error(TypeElement spec, Tree t, String msg) {
-        CompilationUnitTree compilationUnit = trees.getPath(spec).getCompilationUnit();
-        trees.printMessage(Diagnostic.Kind.ERROR, msg, t, compilationUnit);
     }
 }

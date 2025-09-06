@@ -15,19 +15,31 @@
  */
 package com.detornium.graft.annotations.processors.models;
 
-import lombok.Builder;
 import lombok.Data;
 
+import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 @Data
-@Builder
 public class MappingContext {
+    private Element elementToProcess;
     private TypeElement spec;
     private Fqcn mapperType;
     private TypeElement sourceType;
     private TypeElement targetType;
     private boolean processed;
-    private boolean ignoreUnmapped;
-    private boolean disableAutoMapping;
+    private List<Mapping> mappings;
+    private Set<String> processedPhaseNames = new HashSet<>();
+
+    public MappingContext(Element elementToProcess) {
+        this.elementToProcess = elementToProcess;
+        this.processed = false;
+    }
+
+    public void addProcessedPhaseName(String phaseName) {
+        this.processedPhaseNames.add(phaseName);
+    }
 }
