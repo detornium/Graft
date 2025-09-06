@@ -37,7 +37,7 @@ public final class MappingUtils {
 
             Mapping mapping = new Mapping();
             mapping.setSetter(setter);
-            mapping.setGetter(getter);
+            mapping.setGetters(List.of(getter));
             mappings.add(mapping);
         }
         return mappings;

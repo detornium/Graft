@@ -17,7 +17,9 @@
 package com.detornium.graft.annotations.processors.generators;
 
 import com.detornium.graft.Mapper;
-import com.detornium.graft.annotations.processors.models.*;
+import com.detornium.graft.annotations.processors.models.Accessor;
+import com.detornium.graft.annotations.processors.models.Fqcn;
+import com.detornium.graft.annotations.processors.models.Mapping;
 import com.squareup.javapoet.*;
 
 import javax.lang.model.element.Modifier;
@@ -40,6 +42,7 @@ public class GetterSetterMapperGenerator extends MapperGeneratorBase {
 
         // Fields for converters would be added here if needed.
         List<FieldSpec> fields = new ArrayList<>();
+        List<MethodSpec> methods = new ArrayList<>();
 
         MethodSpec.Builder mapMethod = MethodSpec.methodBuilder("map")
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -54,24 +57,18 @@ public class GetterSetterMapperGenerator extends MapperGeneratorBase {
             if (mapping.isExclude() || mapping.getSetter() == null) {
                 continue;
             }
-            
+
             Accessor setter = mapping.getSetter();
             String setterMethod = setter.getMethodName();
 
-            Accessor getter = mapping.getGetter();
-            String getterMethod = getter == null ? null : getter.getMethodName();
-
-            MemberRefInfo converter = mapping.getConverter();
-            ConstantValue constantSrc = mapping.getConstant();
-
             // Retrieve value code block
-            CodeBlock retrieveValueCode = generateValueRetrievalCode(constantSrc, getter, getterMethod);
+            CodeBlock retrieveValueCode = generateValueRetrievalCode(mapMethod, methods, src, mapping);
 
             // Apply cloning if needed
-            retrieveValueCode = generateCloneCode(src, mapping, getter, retrieveValueCode);
+            retrieveValueCode = generateCloneCode(src, mapping, retrieveValueCode);
 
             // Apply converter if present
-            retrieveValueCode = generateConvertCode(converter, setter, getter, srcType, fields, retrieveValueCode);
+            retrieveValueCode = generateConvertCode(mapping, srcType, fields, retrieveValueCode);
 
             // Set property statement
             CodeBlock setPropertyStatement = generateSetCode(setterMethod, retrieveValueCode);
@@ -90,6 +87,7 @@ public class GetterSetterMapperGenerator extends MapperGeneratorBase {
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addFields(fields)
                 .addMethod(mapMethod.build())
+                .addMethods(methods)
                 .build();
 
         JavaFile javaFile = JavaFile.builder(fqcn.packageName(), type)

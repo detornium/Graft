@@ -48,8 +48,12 @@ abstract class MapperGeneratorBase implements MapperGenerator {
             Map.entry(NavigableMap.class, TreeMap.class)
     );
 
-    protected static CodeBlock generateConvertCode(MemberRefInfo converter, Accessor setter, Accessor getter, ClassName srcType, List<FieldSpec> fields, CodeBlock retrieveValueCode) {
+    protected CodeBlock generateConvertCode(Mapping mapping, ClassName srcType, List<FieldSpec> fields, CodeBlock retrieveValueCode) {
+        MemberRefInfo converter = mapping.getConverter();
         if (converter != null) {
+            Accessor setter = mapping.getSetter();
+            Accessor getter = mapping.getLastGetter();
+
             String converterDefinitionName = setter.getName() + "Converter";
             TypeName converterType = ParameterizedTypeName.get(
                     ClassName.get(Function.class),
@@ -69,22 +73,20 @@ abstract class MapperGeneratorBase implements MapperGenerator {
         return retrieveValueCode;
     }
 
-    protected static CodeBlock generateCloneCode(TypeElement src, Mapping mapping, Accessor getter, CodeBlock retrieveValueCode) {
+    protected CodeBlock generateCloneCode(TypeElement src, Mapping mapping, CodeBlock retrieveValueCode) {
         if (mapping.isCopy()) {
             // check if cloneable
             // get src type
             CodeBlock cloneCode;
-            TypeMirror srcValueType = (getter == null)
-                    ? src.asType()
-                    : getter.getValueType();
 
-            TypeMirror srcValueTypeMirror = (getter == null)
+            Accessor getter = mapping.getLastGetter();
+            TypeMirror srcValueType = (getter == null)
                     ? src.asType()
                     : getter.getValueType();
 
             if (isCloneable(srcValueType)) {
                 // CLoneable
-                cloneCode = CodeBlock.of("($T) ($L).clone()", srcValueTypeMirror, retrieveValueCode);
+                cloneCode = CodeBlock.of("($T) ($L).clone()", srcValueType, retrieveValueCode);
             } else if (isCollection(srcValueType) || isMap(srcValueType)) {
                 // Collection or Map with known clone strategy
                 Class<?> implementation = DEFAULT_COLLECTION_IMPLEMENTATIONS.get(getClassForType(srcValueType));
@@ -105,8 +107,12 @@ abstract class MapperGeneratorBase implements MapperGenerator {
         return retrieveValueCode;
     }
 
-    protected static CodeBlock generateValueRetrievalCode(ConstantValue constantSrc, Accessor getter, String getterMethod) {
+    protected CodeBlock generateValueRetrievalCode(MethodSpec.Builder methodBuilder, List<MethodSpec> methods, TypeElement src, Mapping mapping) {
         CodeBlock retrieveValueCode;
+
+        List<Accessor> getters = mapping.getGetters();
+        ConstantValue constantSrc = mapping.getConstant();
+
         if (constantSrc != null) {
             String value = constantSrc.getValue();
             if (value != null) {
@@ -123,12 +129,54 @@ abstract class MapperGeneratorBase implements MapperGenerator {
                     retrieveValueCode = CodeBlock.of("null");
                 }
             }
-        } else if (getter == null) {
+        } else if (getters == null || getters.isEmpty()) {
             // src.this
             retrieveValueCode = CodeBlock.of("src");
+        } else if (getters.size() == 1) {
+            retrieveValueCode = CodeBlock.of("src.$L()", getters.get(0).getMethodName());
         } else {
-            retrieveValueCode = CodeBlock.of("src.$L()", getterMethod);
+            String getterMethodName = "get" + mapping.getSetter().getName() + "Value";
+            String varName = mapping.getSetter().getName();
+            methodBuilder.addStatement("$T $L = $L(src)",
+                    TypeName.get(mapping.getLastGetter().getValueType()),
+                    varName,
+                    getterMethodName);
+            methods.add(generateNestedGetterMethod(getterMethodName, src, getters));
+            retrieveValueCode = CodeBlock.of("$L", varName);
         }
+
         return retrieveValueCode;
+    }
+
+    private MethodSpec generateNestedGetterMethod(String methodName, TypeElement srcType, List<Accessor> getters) {
+        TypeName returnType = TypeName.get(getters.get(getters.size() - 1).getValueType());
+
+        MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(methodName)
+                .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+                .returns(returnType)
+                .addParameter(ClassName.get(srcType), "src");
+
+        methodBuilder.beginControlFlow("if (src == null)")
+                .addStatement("return null")
+                .endControlFlow();
+
+        String currentVar = "src";
+        for (int i = 0; i < getters.size() - 1; i++) {
+            Accessor getter = getters.get(i);
+            String nextVar = "var" + (i + 1);
+            TypeName nextType = TypeName.get(getter.getValueType());
+            methodBuilder.addStatement("$T $L = $L.$L()", nextType, nextVar, currentVar, getter.getMethodName());
+            methodBuilder.beginControlFlow("if ($L == null)", nextVar)
+                    .addStatement("return null")
+                    .endControlFlow();
+            currentVar = nextVar;
+        }
+
+        Accessor lastGetter = getters.get(getters.size() - 1);
+        String retrieveValueCode = currentVar + "." + lastGetter.getMethodName() + "()";
+
+        methodBuilder.addStatement("return $L", retrieveValueCode);
+
+        return methodBuilder.build();
     }
 }

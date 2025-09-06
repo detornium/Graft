@@ -55,6 +55,7 @@ public class ProcessMappingsPhase extends AbstractProcessingPhase {
     );
 
     private static final String MAP_INSTR = "map";
+    private static final String NESTED_INSTR = "nested";
     private static final String VALUE_INSTR = "value";
     private static final String SELF_INSTR = "self";
     private static final String COPY_INSTR = "copy";
@@ -142,9 +143,9 @@ public class ProcessMappingsPhase extends AbstractProcessingPhase {
 
         List<Call> callChain = buildCallChain((MethodInvocationTree) expr);
 
-        if (!isValidCallChain(callChain)) {
-            throw new ProcessingException(expr, "Invalid method call chain in mapping specification.");
-        }
+//        if (!isValidCallChain(callChain)) {
+//            throw new ProcessingException(expr, "Invalid method call chain in mapping specification.");
+//        }
 
         Mapping mapping = new Mapping();
         for (Call call : callChain) {
@@ -156,7 +157,20 @@ public class ProcessMappingsPhase extends AbstractProcessingPhase {
 
                     ExecutableElement executableElement = memberRefInfo.element();
                     Accessor getter = resolveGetter(executableElement, src);
-                    mapping.setGetter(getter);
+                    mapping.addGetter(getter);
+                }
+                case NESTED_INSTR -> {
+                    MemberRefInfo memberRefInfo = processingUtils.resolveMemberRef(spec, call.argument(0))
+                            .orElseThrow(() -> new ProcessingException(call.argument(0), "Should be a method reference."));
+
+                    ExecutableElement executableElement = memberRefInfo.element();
+
+                    TypeElement typeElement = declaredTypeMirrorToTypeElement(memberRefInfo.qualifierType())
+                            .orElseThrow(() -> new ProcessingException(call.argument(0), "Cannot resolve type element for nested mapping."));
+
+                    Accessor getter = resolveGetter(executableElement, typeElement);
+
+                    mapping.addGetter(getter);
                 }
                 case VALUE_INSTR -> {
                     ConstantValue constValue = processingUtils.resolveConstantValue(spec, call.argument(0))
@@ -165,13 +179,14 @@ public class ProcessMappingsPhase extends AbstractProcessingPhase {
                     mapping.setConstant(constValue);
                 }
                 case SELF_INSTR -> {
-                    mapping.setGetter(null); // mark as self
+                    mapping.setGetters(List.of()); // mark as self
                 }
                 case COPY_INSTR -> {
-                    // check if getter return is Cloneable, Map, Collection or array
-                    TypeMirror srcPropertyType = mapping.getGetter() == null
+                    // check if last getter return is Cloneable, Map, Collection or array
+                    Accessor getter = mapping.getLastGetter();
+                    TypeMirror srcPropertyType = getter == null
                             ? src.asType()
-                            : mapping.getGetter().getValueType();
+                            : getter.getValueType();
 
                     if (!isCloneable(srcPropertyType) && !isMap(srcPropertyType)
                             && !isCollection(srcPropertyType) && !isArray(srcPropertyType)) {

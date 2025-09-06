@@ -17,7 +17,10 @@
 package com.detornium.graft.annotations.processors.generators;
 
 import com.detornium.graft.Mapper;
-import com.detornium.graft.annotations.processors.models.*;
+import com.detornium.graft.annotations.processors.models.Accessor;
+import com.detornium.graft.annotations.processors.models.ConstantValue;
+import com.detornium.graft.annotations.processors.models.Fqcn;
+import com.detornium.graft.annotations.processors.models.Mapping;
 import com.squareup.javapoet.*;
 
 import javax.lang.model.element.Modifier;
@@ -42,6 +45,7 @@ public class DestRecordMapperGenerator extends MapperGeneratorBase {
         ClassName dstType = ClassName.get(dst);
 
         List<FieldSpec> fields = new ArrayList<>();
+        List<MethodSpec> methods = new ArrayList<>();
 
         Map<String, Mapping> mappingMap = mappings.stream()
                 .collect(Collectors.toMap(m -> m.getSetter().getName(), m -> m));
@@ -64,19 +68,21 @@ public class DestRecordMapperGenerator extends MapperGeneratorBase {
             Mapping mapping = mappingMap.get(destName);
             if (mapping != null && !mapping.isExclude()) {
                 Accessor setter = mapping.getSetter();
-                Accessor getter = mapping.getGetter();
+
+                List<Accessor> getters = mapping.getGetters();
+                Accessor getter = getters.isEmpty() ? null : getters.get(0);
+
                 String getterMethod = getter == null ? null : getter.getMethodName();
 
                 ConstantValue constantSrc = mapping.getConstant();
 
-                retrieveValueCode = generateValueRetrievalCode(constantSrc, getter, getterMethod);
-                MemberRefInfo converter = mapping.getConverter();
+                retrieveValueCode = generateValueRetrievalCode(mapMethod, methods, src, mapping);
 
                 // Apply cloning if needed
-                retrieveValueCode = generateCloneCode(src, mapping, getter, retrieveValueCode);
+                retrieveValueCode = generateCloneCode(src, mapping, retrieveValueCode);
 
                 // Apply converter if present
-                retrieveValueCode = generateConvertCode(converter, setter, getter, srcType, fields, retrieveValueCode);
+                retrieveValueCode = generateConvertCode(mapping, srcType, fields, retrieveValueCode);
             } else if (isPrimitive(type)) {
                 retrieveValueCode = CodeBlock.of("$L", getZeroValue(type));
             } else {
