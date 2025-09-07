@@ -25,14 +25,10 @@ import java.util.List;
 public class Mapping {
     private ConstantValue constant; // expr for value(...)
     private List<Accessor> getters = new ArrayList<>();
-    private Accessor setter;    // e.g. setNumberOfSeats
+    private List<Accessor> setters = new ArrayList<>();
     private MemberRefInfo converter; // raw expr for converting(...) or null
     private boolean exclude;  // when exclude(setter)
     private boolean copy;     // when copy()
-
-    public Accessor getFirstGetter() {
-        return getters != null && !getters.isEmpty() ? getters.get(0) : null;
-    }
 
     public Accessor getLastGetter() {
         return getters != null && !getters.isEmpty() ? getters.get(getters.size() - 1) : null;
@@ -44,5 +40,17 @@ public class Mapping {
         }
 
         this.getters.add(getter);
+    }
+
+    public Accessor getFirstSetter() {
+        return setters != null && !setters.isEmpty() ? setters.get(0) : null;
+    }
+
+    public void addSetter(Accessor setter) {
+        if (this.setters == null) {
+            this.setters = new ArrayList<>();
+        }
+
+        this.setters.add(setter);
     }
 }

@@ -33,6 +33,8 @@ public class MappingContext {
     private boolean processed;
     private List<Mapping> mappings;
     private Set<String> processedPhaseNames = new HashSet<>();
+    private List<Mapping> autoMappings;
+    private List<Mapping> explicitMappings;
 
     public MappingContext(Element elementToProcess) {
         this.elementToProcess = elementToProcess;

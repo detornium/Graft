@@ -54,12 +54,9 @@ public class GetterSetterMapperGenerator extends MapperGeneratorBase {
 
 
         for (Mapping mapping : mappings) {
-            if (mapping.isExclude() || mapping.getSetter() == null) {
+            if (mapping.isExclude() || mapping.getSetters().isEmpty()) {
                 continue;
             }
-
-            Accessor setter = mapping.getSetter();
-            String setterMethod = setter.getMethodName();
 
             // Retrieve value code block
             CodeBlock retrieveValueCode = generateValueRetrievalCode(mapMethod, methods, src, mapping);
@@ -71,7 +68,7 @@ public class GetterSetterMapperGenerator extends MapperGeneratorBase {
             retrieveValueCode = generateConvertCode(mapping, srcType, fields, retrieveValueCode);
 
             // Set property statement
-            CodeBlock setPropertyStatement = generateSetCode(setterMethod, retrieveValueCode);
+            CodeBlock setPropertyStatement = generateSetCode(mapping, retrieveValueCode);
 
             mapMethod.addStatement(setPropertyStatement);
         }
@@ -97,8 +94,39 @@ public class GetterSetterMapperGenerator extends MapperGeneratorBase {
         return javaFile::writeTo;
     }
 
-    private static CodeBlock generateSetCode(String setterMethod, CodeBlock retrieveValueCode) {
-        return CodeBlock.of("dst.$L($L)", setterMethod, retrieveValueCode);
+    private static CodeBlock generateSetCode(Mapping mapping, CodeBlock retrieveValueCode) {
+        List<Accessor> setters = mapping.getSetters();
+//        if (setters.size() == 1) {
+        return CodeBlock.of("dst.$L($L)", setters.get(0).getMethodName(), retrieveValueCode);
+//        } else {
+//            String setterMethodName = "set" + mapping.getSetter().getName() + "Value";
+//            String varName = mapping.getSetter().getName();
+//            MethodSpec.Builder methodBuilder = MethodSpec.methodBuilder(setterMethodName)
+//                    .addModifiers(Modifier.PRIVATE, Modifier.FINAL)
+//                    .addParameter(TypeName.get(mapping.getLastSetter().getValueType()), "dst")
+//                    .addParameter(TypeName.get(mapping.getLastGetter().getValueType()), varName);
+//            methodBuilder.beginControlFlow("if (dst == null)")
+//                    .addStatement("return")
+//                    .endControlFlow();
+//
+//            for (int i = 0; i < setters.size(); i++) {
+//                Accessor setter = setters.get(i);
+//                if (i == setters.size() - 1) {
+//                    methodBuilder.addStatement("dst.$L($L)", setter.getMethodName(), varName);
+//                } else {
+//                    String nextVar = "var" + (i + 1);
+//                    TypeName nextType = TypeName.get(setter.getValueType());
+//                    methodBuilder.addStatement("$T $L = dst.$L()", nextType, nextVar, setter.getMethodName());
+//                    methodBuilder.beginControlFlow("if ($L == null)", nextVar)
+//                            .addStatement("$L = new $T()", nextVar, nextType.box())
+//                            .addStatement("dst.$L($L)", setter.getMethodName(), nextVar)
+//                            .endControlFlow();
+//                    dst = nextVar;
+//                }
+//            }
+//            methods.add(methodBuilder.build());
+//            return CodeBlock.of("$L(dst, $L)", setterMethodName, retrieveValueCode);
+//        }
     }
 
 }

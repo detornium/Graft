@@ -45,7 +45,9 @@ public class MapperProcessor extends AbstractProcessor {
 
         processingChain = new InitPhase(processingEnv)
                 .andThen(new AnalyzeDependenciesPhase())
-                .andThen(new ProcessMappingsPhase(processingEnv))
+                .andThen(new AutoMappingsDiscoveryPhase(processingEnv))
+                .andThen(new ProcessExplicitMappingsPhase(processingEnv))
+                .andThen(new MergeMappingsPhase(processingEnv))
                 .andThen(new MapperGenerationPhase(processingEnv));
     }
 

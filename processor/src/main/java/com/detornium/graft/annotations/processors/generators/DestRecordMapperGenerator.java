@@ -48,7 +48,7 @@ public class DestRecordMapperGenerator extends MapperGeneratorBase {
         List<MethodSpec> methods = new ArrayList<>();
 
         Map<String, Mapping> mappingMap = mappings.stream()
-                .collect(Collectors.toMap(m -> m.getSetter().getName(), m -> m));
+                .collect(Collectors.toMap(m -> m.getSetters().get(0).getName(), m -> m));
 
         MethodSpec.Builder mapMethod = MethodSpec.methodBuilder("map")
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -67,7 +67,7 @@ public class DestRecordMapperGenerator extends MapperGeneratorBase {
             CodeBlock retrieveValueCode;
             Mapping mapping = mappingMap.get(destName);
             if (mapping != null && !mapping.isExclude()) {
-                Accessor setter = mapping.getSetter();
+                Accessor setter = mapping.getSetters().get(0);
 
                 List<Accessor> getters = mapping.getGetters();
                 Accessor getter = getters.isEmpty() ? null : getters.get(0);

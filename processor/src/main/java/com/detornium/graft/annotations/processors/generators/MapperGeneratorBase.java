@@ -51,7 +51,7 @@ abstract class MapperGeneratorBase implements MapperGenerator {
     protected CodeBlock generateConvertCode(Mapping mapping, ClassName srcType, List<FieldSpec> fields, CodeBlock retrieveValueCode) {
         MemberRefInfo converter = mapping.getConverter();
         if (converter != null) {
-            Accessor setter = mapping.getSetter();
+            Accessor setter = mapping.getFirstSetter();
             Accessor getter = mapping.getLastGetter();
 
             String converterDefinitionName = setter.getName() + "Converter";
@@ -135,8 +135,8 @@ abstract class MapperGeneratorBase implements MapperGenerator {
         } else if (getters.size() == 1) {
             retrieveValueCode = CodeBlock.of("src.$L()", getters.get(0).getMethodName());
         } else {
-            String getterMethodName = "get" + mapping.getSetter().getName() + "Value";
-            String varName = mapping.getSetter().getName();
+            String getterMethodName = "get" + mapping.getFirstSetter().getName() + "Value";
+            String varName = mapping.getFirstSetter().getName();
             methodBuilder.addStatement("$T $L = $L(src)",
                     TypeName.get(mapping.getLastGetter().getValueType()),
                     varName,
