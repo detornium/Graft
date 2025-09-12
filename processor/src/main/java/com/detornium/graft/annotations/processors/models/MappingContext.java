@@ -35,6 +35,7 @@ public class MappingContext {
     private Set<String> processedPhaseNames = new HashSet<>();
     private List<Mapping> autoMappings;
     private List<Mapping> explicitMappings;
+    private SetterNode dependencyTreeRoot;
 
     public MappingContext(Element elementToProcess) {
         this.elementToProcess = elementToProcess;
