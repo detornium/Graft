@@ -13,17 +13,24 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+package com.detornium.graft.annotations.processors.models.tree;
 
-package com.detornium.graft.annotations.processors.generators;
+import com.detornium.graft.annotations.processors.scanners.NodeVisitor;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 
-import com.detornium.graft.annotations.processors.models.Fqcn;
-import com.detornium.graft.annotations.processors.models.Mapping;
+import javax.lang.model.type.TypeMirror;
 
-import javax.lang.model.element.TypeElement;
-import java.util.List;
+@Getter
+@Setter
+@AllArgsConstructor
+public class ConstructNode extends CompositeNode {
+    private String name;
+    private TypeMirror type;
 
-public interface MapperGenerator {
-    GeneratorResult generate(Fqcn fqcn,
-                             TypeElement src, TypeElement dst,
-                             List<Mapping> mappings);
+    @Override
+    protected <R> R doVisit(NodeVisitor<R> visitor, R childResults) {
+        return visitor.visit(this, childResults);
+    }
 }

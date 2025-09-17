@@ -13,13 +13,22 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+package com.detornium.graft.annotations.processors.models.tree;
 
-package com.detornium.graft.annotations.processors.generators;
+import com.detornium.graft.annotations.processors.models.ConstantValue;
+import com.detornium.graft.annotations.processors.scanners.NodeVisitor;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.Setter;
 
-import javax.annotation.processing.Filer;
-import java.io.IOException;
+@Getter
+@Setter
+@AllArgsConstructor
+public class ConstantValueNode extends LeafNode {
+    private ConstantValue constantValue;
 
-@FunctionalInterface
-public interface GeneratorResult {
-    void writeTo(Filer filer) throws IOException;
+    @Override
+    public <R> R accept(NodeVisitor<R> visitor) {
+        return visitor.visit(this);
+    }
 }

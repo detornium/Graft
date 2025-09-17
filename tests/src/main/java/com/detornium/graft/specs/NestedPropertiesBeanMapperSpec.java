@@ -16,17 +16,18 @@
 package com.detornium.graft.specs;
 
 import com.detornium.graft.MappingDsl;
+import com.detornium.graft.annotations.MappingSpec;
 import com.detornium.graft.models.NestedPropertiesBean;
 import com.detornium.graft.models.SubBean1;
 import com.detornium.graft.models.SubBean2;
 
-//@MappingSpec(com.detornium.graft.mappers.NestedPropertiesBeanMapper.class)
+@MappingSpec(com.detornium.graft.mappers.NestedPropertiesBeanMapper.class)
 public class NestedPropertiesBeanMapperSpec extends MappingDsl<NestedPropertiesBean, NestedPropertiesBean> {
     {
-//        map(NestedPropertiesBean::getSubBean1)
-//                .nested(SubBean1::getSubBean2)
-//                .nested(SubBean2::getProp2)
-//                .to(NestedPropertiesBean::setBeanProp);
+        map(NestedPropertiesBean::getSubBean1)
+                .nested(SubBean1::getSubBean2)
+                .nested(SubBean2::getProp2)
+                .to(NestedPropertiesBean::setBeanProp);
 
         map(NestedPropertiesBean::getSubBean1)
                 .nested(SubBean1::getSubBean2)

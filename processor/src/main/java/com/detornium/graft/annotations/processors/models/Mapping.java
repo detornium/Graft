@@ -46,6 +46,10 @@ public class Mapping {
         return setters != null && !setters.isEmpty() ? setters.get(0) : null;
     }
 
+    public Accessor getLastSetter() {
+        return setters != null && !setters.isEmpty() ? setters.get(setters.size() - 1) : null;
+    }
+
     public void addSetter(Accessor setter) {
         if (this.setters == null) {
             this.setters = new ArrayList<>();

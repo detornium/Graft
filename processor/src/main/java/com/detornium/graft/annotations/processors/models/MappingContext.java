@@ -15,6 +15,7 @@
  */
 package com.detornium.graft.annotations.processors.models;
 
+import com.detornium.graft.annotations.processors.models.tree.Node;
 import lombok.Data;
 
 import javax.lang.model.element.Element;
@@ -35,7 +36,7 @@ public class MappingContext {
     private Set<String> processedPhaseNames = new HashSet<>();
     private List<Mapping> autoMappings;
     private List<Mapping> explicitMappings;
-    private SetterNode dependencyTreeRoot;
+    private Node dependencyTreeRoot;
 
     public MappingContext(Element elementToProcess) {
         this.elementToProcess = elementToProcess;

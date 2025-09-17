@@ -15,17 +15,22 @@
  */
 package com.detornium.graft.annotations.processors.phases;
 
+import com.detornium.graft.Mapper;
 import com.detornium.graft.annotations.processors.ProcessingException;
-import com.detornium.graft.annotations.processors.generators.DestRecordMapperGenerator;
-import com.detornium.graft.annotations.processors.generators.GetterSetterMapperGenerator;
-import com.detornium.graft.annotations.processors.generators.MapperGenerator;
+import com.detornium.graft.annotations.processors.models.Fqcn;
+import com.detornium.graft.annotations.processors.models.GenerationContext;
 import com.detornium.graft.annotations.processors.models.MappingContext;
+import com.detornium.graft.annotations.processors.models.tree.Node;
+import com.detornium.graft.annotations.processors.scanners.MapperGenerationVisitor;
+import com.squareup.javapoet.*;
 
 import javax.annotation.processing.Filer;
 import javax.annotation.processing.ProcessingEnvironment;
+import javax.lang.model.element.Modifier;
 import java.io.IOException;
 
-import static com.detornium.graft.annotations.processors.utils.Helpers.isRecord;
+import static com.detornium.graft.annotations.processors.Constants.*;
+import static com.detornium.graft.annotations.processors.utils.CodeSnippets.returnNullIfNullCode;
 
 public class MapperGenerationPhase extends AbstractProcessingPhase {
     private static final String NAME = "Mapper Generation Phase";
@@ -38,15 +43,43 @@ public class MapperGenerationPhase extends AbstractProcessingPhase {
 
     @Override
     protected void doProcess(MappingContext context) throws ProcessingException {
-        try {
-            MapperGenerator mapperGenerator = isRecord(context.getTargetType())
-                    ? new DestRecordMapperGenerator()
-                    : new GetterSetterMapperGenerator();
+        ClassName srcType = ClassName.get(context.getSourceType());
+        ClassName targetType = ClassName.get(context.getTargetType());
 
-            mapperGenerator.generate(context.getMapperType(),
-                    context.getSourceType(),
-                    context.getTargetType(),
-                    context.getMappings()).writeTo(filer);
+        Node tree = context.getDependencyTreeRoot();
+
+        GenerationContext generationContext = new GenerationContext();
+        tree.accept(new MapperGenerationVisitor(generationContext));
+
+        MethodSpec.Builder mapMethod = MethodSpec.methodBuilder("map")
+                .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+                .addAnnotation(Override.class)
+                .returns(targetType)
+                .addParameter(srcType, SOURCE_VAR_NAME)
+                .addCode(returnNullIfNullCode(SOURCE_VAR_NAME));
+
+        generationContext.getStatements().forEach(mapMethod::addCode);
+        mapMethod.addStatement("return $L", TARGET_VAR_NAME);
+
+
+        ParameterizedTypeName superInterface = ParameterizedTypeName.get(
+                ClassName.get(Mapper.class), srcType, targetType
+        );
+
+        Fqcn fqcn = context.getMapperType();
+
+        TypeSpec type = TypeSpec.classBuilder(fqcn.className())
+                .addSuperinterface(superInterface)
+                .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+                .addFields(generationContext.getFields())
+                .addMethod(mapMethod.build())
+                .build();
+
+        JavaFile javaFile = JavaFile.builder(fqcn.packageName(), type)
+                .indent(INDENT)
+                .build();
+        try {
+            javaFile.writeTo(filer);
         } catch (IOException e) {
             // TODO log the exception
             throw new ProcessingException(context.getSpec(), "Failed to generate mapper class: %s".formatted(e.getMessage()));

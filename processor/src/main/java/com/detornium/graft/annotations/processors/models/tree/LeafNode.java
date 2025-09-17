@@ -13,23 +13,14 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
-package com.detornium.graft.annotations.processors.models;
+package com.detornium.graft.annotations.processors.models.tree;
 
-import lombok.Getter;
-import lombok.Setter;
-
-import java.util.ArrayList;
 import java.util.List;
 
-@Getter
-@Setter
-public class Node<T extends Node<T>> {
-    private Accessor accessor;
-    private T parent;
-    private List<T> children = new ArrayList<>();
+public abstract class LeafNode extends Node {
 
-    public void addChild(T child) {
-        children.add(child);
-        child.setParent((T) this);
+    @Override
+    public List<Node> getChildren() {
+        return List.of();
     }
 }

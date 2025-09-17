@@ -13,8 +13,25 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
-package com.detornium.graft.annotations.processors.models;
+package com.detornium.graft.annotations.processors.models.tree;
 
-public class GetterNode extends Node<GetterNode> {
+import com.detornium.graft.annotations.processors.models.MemberRefInfo;
+import com.detornium.graft.annotations.processors.scanners.NodeVisitor;
+import lombok.Getter;
+import lombok.Setter;
 
+import javax.lang.model.type.TypeMirror;
+
+@Getter
+@Setter
+public class ConverterNode extends UnaryNode {
+    private MemberRefInfo converterRef;
+    private TypeMirror sourceType;
+    private TypeMirror targetType;
+
+    @Override
+    public <R> R accept(NodeVisitor<R> visitor) {
+        R in = child != null ? child.accept(visitor) : null;
+        return visitor.visit(this, in);
+    }
 }
