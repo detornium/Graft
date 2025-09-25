@@ -28,10 +28,7 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
 import javax.tools.Diagnostic;
-import java.util.Deque;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.function.Function;
 
 import static com.detornium.graft.annotations.processors.utils.Helpers.*;
@@ -39,18 +36,7 @@ import static com.detornium.graft.annotations.processors.utils.Helpers.*;
 public class ProcessExplicitMappingsPhase extends AbstractProcessingPhase {
     private static final String NAME = "Process Explicit Mappings Phase";
 
-    // TODO: use tree for possible combinations hint
-    private static final List<List<String>> ALLOWED_CALL_CHAIN = List.of(
-            List.of("map", "to"),
-            List.of("map", "converting", "to"),
-            List.of("exclude"),
-            List.of("self", "to"),
-            List.of("self", "converting", "to"),
-            List.of("value", "to"),
-            List.of("self", "copy", "to"),
-            List.of("map", "copy", "to")
-    );
-
+    private static final String NO_INSTR = "";
     private static final String MAP_INSTR = "map";
     private static final String NESTED_INSTR = "nested";
     private static final String VALUE_INSTR = "value";
@@ -60,6 +46,24 @@ public class ProcessExplicitMappingsPhase extends AbstractProcessingPhase {
     private static final String BEAN_INSTR = "bean";
     private static final String TO_INSTR = "to";
     private static final String EXCLUDE_INSTR = "exclude";
+
+    private Map<String, List<String>> ALLOWED_CALLS = Map.of(
+            NO_INSTR, List.of(MAP_INSTR, SELF_INSTR, VALUE_INSTR, EXCLUDE_INSTR),
+            MAP_INSTR, List.of(TO_INSTR, CONVERTING_INSTR, COPY_INSTR, NESTED_INSTR),
+            NESTED_INSTR, List.of(TO_INSTR, CONVERTING_INSTR, COPY_INSTR, NESTED_INSTR),
+            VALUE_INSTR, List.of(TO_INSTR),
+            SELF_INSTR, List.of(TO_INSTR, CONVERTING_INSTR, COPY_INSTR),
+            COPY_INSTR, List.of(TO_INSTR),
+            CONVERTING_INSTR, List.of(TO_INSTR),
+            TO_INSTR, List.of(NO_INSTR),
+            EXCLUDE_INSTR, List.of(NO_INSTR)
+    );
+
+    private Map<String, List<String>> ALLOWED_TO_CALLS = Map.of(
+            NO_INSTR, List.of(BEAN_INSTR),
+            BEAN_INSTR, List.of(NESTED_INSTR),
+            NESTED_INSTR, List.of(NESTED_INSTR, NO_INSTR)
+    );
 
     private final Trees trees;
 
@@ -109,23 +113,15 @@ public class ProcessExplicitMappingsPhase extends AbstractProcessingPhase {
                 .filter(Objects::nonNull)
                 .toList();
 
-//        if (statements.size() != mappings.size()) {
-//            throw new ProcessingException(spec, "All statements in initializer blocks must be mapping specifications.");
-//        }
+        if (statements.size() != mappings.size()) {
+            throw new ProcessingException(spec, "All statements in initializer blocks must be valid mapping specifications.");
+        }
 
         return mappings;
     }
 
     private Mapping handleExpression(TypeElement spec, ExpressionTree expr, TypeElement src, TypeElement dst) throws ProcessingException {
-        if (!(expr instanceof MethodInvocationTree)) {
-            throw new ProcessingException(expr, "Mapping specification must be a method call chain.");
-        }
-
-        Deque<MethodInvocation> methodInvocations = methodInvocationScanner.scan(expr, new LinkedList<>());
-
-//        if (!isValidCallChain(callChain)) {
-//            throw new ProcessingException(expr, "Invalid method call chain in mapping specification.");
-//        }
+        Deque<MethodInvocation> methodInvocations = parseExpression(expr, ALLOWED_CALLS);
 
         Mapping mapping = new Mapping();
         for (MethodInvocation methodInvocation : methodInvocations) {
@@ -139,8 +135,6 @@ public class ProcessExplicitMappingsPhase extends AbstractProcessingPhase {
                 case CONVERTING_INSTR -> onConverting(mapping, spec, methodInvocation.getArguments());
                 case TO_INSTR -> onTo(mapping, spec, dst, methodInvocation.getArguments());
                 case EXCLUDE_INSTR -> onExclude(mapping, spec, dst, methodInvocation.getArguments());
-                default -> throw new ProcessingException(expr,
-                        "Unexpected method call '%s' in mapping specification.".formatted(callName));
             }
         }
 
@@ -148,18 +142,11 @@ public class ProcessExplicitMappingsPhase extends AbstractProcessingPhase {
     }
 
     private void handleToExpression(Mapping mapping, TypeElement spec, TypeElement dst, ExpressionTree expr) throws ProcessingException {
-        if (!(expr instanceof MethodInvocationTree)) {
-            throw new ProcessingException(expr, "Mapping specification must be a method call chain.");
-        }
+        Deque<MethodInvocation> methodInvocations = parseExpression(expr, ALLOWED_TO_CALLS);
 
-        Deque<MethodInvocation> methodInvocations = methodInvocationScanner.scan(expr, new LinkedList<>());
         for (MethodInvocation methodInvocation : methodInvocations) {
-            String callName = methodInvocation.getMethodName();
-            switch (callName) {
-                case BEAN_INSTR, NESTED_INSTR -> onNestedTo(mapping, spec, dst, methodInvocation.getArguments());
-                default -> throw new ProcessingException(expr,
-                        "Unexpected method call '%s' in mapping specification.".formatted(callName));
-            }
+            // only bean() and nested() are allowed. no need to check
+            onNestedTo(mapping, spec, dst, methodInvocation.getArguments());
         }
     }
 
@@ -284,13 +271,40 @@ public class ProcessExplicitMappingsPhase extends AbstractProcessingPhase {
         return beanIntrospector.getAccessor(executableElement, accessorType);
     }
 
-    private boolean isValidCallChain(List<MethodInvocation> methodInvocations) {
-        List<String> callNames = methodInvocations.stream()
-                .map(MethodInvocation::getMethodName)
-                .toList();
+    private Deque<MethodInvocation> parseExpression(ExpressionTree expr, Map<String, List<String>> allowedCalls) throws ProcessingException {
+        if (!(expr instanceof MethodInvocationTree)) {
+            throw new ProcessingException(expr, "Mapping specification must be a method call chain.");
+        }
 
-        return ALLOWED_CALL_CHAIN.stream()
-                .anyMatch(allowed -> allowed.equals(callNames));
+        Deque<MethodInvocation> result = methodInvocationScanner.scan(expr, new LinkedList<>());
+        validateCallChain(expr, result, allowedCalls);
+        return result;
+    }
+
+    private void validateCallChain(ExpressionTree expression, Collection<MethodInvocation> methodInvocations, Map<String, List<String>> allowedCalls) throws ProcessingException {
+        String currentCall = NO_INSTR;
+        for (MethodInvocation methodInvocation : methodInvocations) {
+            String callName = methodInvocation.getMethodName();
+            List<String> allowedNextCalls = allowedCalls.get(currentCall);
+            if (allowedNextCalls == null || !allowedNextCalls.contains(callName)) {
+                if (currentCall.equals(NO_INSTR)) {
+                    throw new ProcessingException(expression, "Invalid method call chain: cannot start with '%s'. Allowed: %s"
+                            .formatted(callName, String.join(", ", allowedCalls.get(NO_INSTR))));
+                } else if (allowedNextCalls == null) {
+                    throw new ProcessingException(expression, "Invalid method call chain: '%s' cannot be followed by '%s'."
+                            .formatted(currentCall, callName));
+                } else {
+                    throw new ProcessingException(expression, "Invalid method call chain: '%s' cannot be followed by '%s'. Allowed: %s"
+                            .formatted(currentCall, callName, String.join(", ", allowedNextCalls)));
+                }
+            }
+            currentCall = callName;
+        }
+
+        if (!allowedCalls.get(currentCall).contains(NO_INSTR)) {
+            throw new ProcessingException(expression, "Invalid method call chain: cannot end with '%s'. Allowed: %s"
+                    .formatted(currentCall, String.join(", ", allowedCalls.get(currentCall))));
+        }
     }
 
     @Override
