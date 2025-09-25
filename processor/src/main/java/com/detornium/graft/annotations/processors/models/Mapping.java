@@ -18,12 +18,43 @@ package com.detornium.graft.annotations.processors.models;
 
 import lombok.Data;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Data
 public class Mapping {
     private ConstantValue constant; // expr for value(...)
-    private Accessor getter;    // e.g. getSeatCount
-    private Accessor setter;    // e.g. setNumberOfSeats
+    private List<Accessor> getters = new ArrayList<>();
+    private List<Accessor> setters = new ArrayList<>();
     private MemberRefInfo converter; // raw expr for converting(...) or null
     private boolean exclude;  // when exclude(setter)
     private boolean copy;     // when copy()
+
+    public Accessor getLastGetter() {
+        return getters != null && !getters.isEmpty() ? getters.get(getters.size() - 1) : null;
+    }
+
+    public void addGetter(Accessor getter) {
+        if (this.getters == null) {
+            this.getters = new ArrayList<>();
+        }
+
+        this.getters.add(getter);
+    }
+
+    public Accessor getFirstSetter() {
+        return setters != null && !setters.isEmpty() ? setters.get(0) : null;
+    }
+
+    public Accessor getLastSetter() {
+        return setters != null && !setters.isEmpty() ? setters.get(setters.size() - 1) : null;
+    }
+
+    public void addSetter(Accessor setter) {
+        if (this.setters == null) {
+            this.setters = new ArrayList<>();
+        }
+
+        this.setters.add(setter);
+    }
 }

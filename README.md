@@ -84,6 +84,8 @@ public final CarDtoRecord map(Car src) {
 }
 ```
 
+---
+
 ## Example: Copy (Cloneable + List)
 
 **Spec** (`CopySpec.java`)
@@ -101,7 +103,6 @@ class CopySpec extends MappingDsl<CopyTestBean, CopyTestDto> {
 }
 ```
 
-
 **Generated mapper (excerpt)**(`CopyTestMapper.java`)
 
 ```java
@@ -113,6 +114,73 @@ Semantics
 .copy() on Cloneable: generates a null-safe clone() call (shallow clone). clone() must be accessible on the runtime type.
 
 .copy() on List: generates a new ArrayList<>(src) (shallow copy). Elements are not deep-cloned.
+
+---
+
+## Example: Nested Mapping
+
+**Spec** (`NestedPropertiesBeanMapperSpec.java`)
+
+```java
+@MappingSpec(com.detornium.graft.mappers.NestedPropertiesBeanMapper.class)
+class NestedPropertiesBeanMapperSpec extends MappingDsl<NestedPropertiesBean, NestedPropertiesBean> {
+    {
+        // 1) Nested source → flat destination setter
+        map(NestedPropertiesBean::getSubBean1)
+                .nested(SubBean1::getSubBean2)
+                .nested(SubBean2::getProp2)
+                .to(NestedPropertiesBean::setBeanProp);
+
+        // 2) Nested source → nested destination chain
+        map(NestedPropertiesBean::getSubBean1)
+                .nested(SubBean1::getSubBean2)
+                .nested(SubBean2::getProp2)
+                .to(bean(NestedPropertiesBean::setSubBean1)
+                        .nested(SubBean1::setSubBean2)
+                        .nested(SubBean2::setProp2));
+    }
+}
+```
+
+**Generated mapper (excerpt)** (`NestedPropertiesBeanMapper.java`)
+
+```java
+@Override
+public final NestedPropertiesBean map(NestedPropertiesBean src) {
+    if (src == null) {
+        return null;
+    }
+
+    // The generator introduces temps for shared subpaths (null-safe)
+    SubBean2 srcSubBean2 = (src.getSubBean1() != null) ? src.getSubBean1().getSubBean2() : null;
+    String   srcProp2    = (srcSubBean2 != null) ? srcSubBean2.getProp2() : null;
+
+    // Nested destination objects are constructed once and reused
+    SubBean2 subBean2 = new SubBean2();
+    subBean2.setProp2(srcProp2);
+
+    SubBean1 subBean1 = new SubBean1();
+    subBean1.setSubBean2(subBean2);
+
+    NestedPropertiesBean dst = new NestedPropertiesBean();
+    dst.setBeanProp(srcProp2);   // flat setter from the same nested source path
+    dst.setSubBean1(subBean1);   // nested setter chain
+
+    return dst;
+}
+```
+
+Semantics
+
+Null-safety along the path: each nested(getter) link is guarded; if an intermediate is null, the whole right-hand side becomes null without throwing NPEs.
+
+Common sub-expression lifting: repeated source prefixes (e.g., src.getSubBean1().getSubBean2()) are cached in a temp variable and reused across mappings.
+
+Destination construction: for POJOs, nested destination beans are constructed once (in dependency order) and wired via the nested setter chain expressed with bean(...).nested(...).nested(...).
+
+Records/immutables: when the destination (or any nested part) is a record/immutable, the generator collects constructor args bottom-up and builds the object in a single constructor call.
+
+Intermixing with converters/constants/copy: you can still use .converting(...), value(...), or .copy() at the leaf; null-safety and temp reuse apply the same way.
 
 ---
 
@@ -227,7 +295,7 @@ Add the following dependencies (compile your API; put processors/bindings on the
 - [ ] Lambda lifting for `converting(...)`
 - [ ] Collection/array mapping options
 - [x] Clone support
-- [ ] Nested mapping support
+- [x] Nested mapping support
 
 ---
 

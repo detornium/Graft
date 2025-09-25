@@ -14,7 +14,7 @@
  *     limitations under the License.
  */
 
-package com.detornium.graft.annotations.processors.generators;
+package com.detornium.graft.annotations.processors.utils;
 
 import com.detornium.graft.annotations.processors.models.MemberRefInfo;
 import com.squareup.javapoet.ClassName;
@@ -28,7 +28,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.*;
 import java.util.List;
 
-class CodeSnippets {
+public class CodeSnippets {
     public static CodeBlock methodRefCode(MemberRefInfo info) {
         TypeMirror qual = info.qualifierType();
 

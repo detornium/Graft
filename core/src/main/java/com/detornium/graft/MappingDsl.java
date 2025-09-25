@@ -26,7 +26,7 @@ public class MappingDsl<S, D> {
         throw new UnsupportedOperationException("This class cannot be instantiated");
     }
 
-    protected <V> MapChain<S, D, V> map(Getter<S, V> getter) {
+    protected <V> MapChain<D, V> map(Getter<S, V> getter) {
         return null;
     }
 
@@ -34,7 +34,7 @@ public class MappingDsl<S, D> {
         return null;
     }
 
-    protected MapChain<S, D, S> self() {
+    protected MapChain<D, S> self() {
         return null;
     }
 
@@ -44,19 +44,39 @@ public class MappingDsl<S, D> {
     protected <V, RD extends Record> void exclude(Getter<RD, V> recordField) {
     }
 
-    public interface MapChain<S, D, V> {
+    public interface MapChain<D, V> {
         void to(Setter<D, V> setter);
 
         <RD extends Record> void to(Getter<RD, V> recordField);
 
+        void to(DestChain<D, V> path);
+
         <R> MapChainTo<D, R> converting(Converter<V, R> conv);
 
         MapChainTo<D, V> copy();
+
+        <N> MapChain<D, N> nested(Getter<V, N> getter);
     }
 
     public interface MapChainTo<D, V> {
         void to(Setter<D, V> setter);
 
         <RD extends Record> void to(Getter<RD, V> recordField);
+
+        void to(DestChain<D, V> path);
+    }
+
+    protected final <V> DestChain<D, V> bean(Setter<D, V> rootSetter) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Builder for nested *target* path: D -> ... -> V via setters.
+     */
+    public interface DestChain<ROOT, T> {
+        /**
+         * Continue path with a nested setter from the current intermediate type.
+         */
+        <V> DestChain<ROOT, V> nested(Setter<T, V> setter);
     }
 }

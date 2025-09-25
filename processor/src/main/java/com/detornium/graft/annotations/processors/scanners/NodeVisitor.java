@@ -13,17 +13,28 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+package com.detornium.graft.annotations.processors.scanners;
 
-package com.detornium.graft.annotations.processors.generators;
+import com.detornium.graft.annotations.processors.models.tree.*;
 
-import com.detornium.graft.annotations.processors.models.Fqcn;
-import com.detornium.graft.annotations.processors.models.Mapping;
-
-import javax.lang.model.element.TypeElement;
 import java.util.List;
 
-public interface MapperGenerator {
-    GeneratorResult generate(Fqcn fqcn,
-                             TypeElement src, TypeElement dst,
-                             List<Mapping> mappings);
+public interface NodeVisitor<R> {
+    R visit(GetterNode node, R in);
+
+    R visit(SelfNode node);
+
+    R visit(ConstantValueNode node);
+
+    R visit(ConverterNode node, R in);
+
+    R visit(CopyValueNode node, R in);
+
+    R visit(SetterNode node, R in);
+
+    R visit(ConstructNode node, R in);
+
+    R visit(ConstructRecordNode node, R in);
+
+    R reduce(List<R> results);
 }

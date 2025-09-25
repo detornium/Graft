@@ -13,13 +13,12 @@
  *     See the License for the specific language governing permissions and
  *     limitations under the License.
  */
+package com.detornium.graft.models;
 
-package com.detornium.graft.annotations.processors.generators;
+import lombok.Data;
 
-import javax.annotation.processing.Filer;
-import java.io.IOException;
-
-@FunctionalInterface
-public interface GeneratorResult {
-    void writeTo(Filer filer) throws IOException;
+@Data
+public class SubBean1 {
+    private SubBean2 subBean2;
+    private String prop1;
 }
