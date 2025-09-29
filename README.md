@@ -184,6 +184,178 @@ Intermixing with converters/constants/copy: you can still use .converting(...), 
 
 ---
 
+## Custom Interfaces (implement your own SAM)
+
+Graft can generate a mapper that **implements your own interface** — as long as it’s a _functional interface_ (exactly one non-default instance method). Declare it on the spec with `targetSuperType`:
+
+```java
+@MappingSpec(
+    value = com.detornium.graft.mappers.CustomMappingInterfaceMapper.class,
+    targetSuperType = com.detornium.graft.interfaces.CustomMapperInterface.class
+)
+class CustomMappingInterfaceSpec extends MappingDsl<SimpleModel, SimpleDto> {}
+```
+
+The processor binds the interface’s single abstract method (SAM) to your `S` (source) and `D` (target), then generates an implementation that wires your mappings.
+### What qualifies as a custom interface?
+
+- **Interface** with **one** non-default, non-static instance method.
+- That method must **accept the source type** (or its type variable) and **return the target type** (or a supertype / its type variable).
+- Generics are supported — the processor binds `S`/`T` to your spec’s `<S, D>`.
+
+#### 1) Generic interface `<S,T>` → `T convert(S src)`
+
+**Interface**
+
+```java
+public interface CustomMapperInterface<S, T> {
+    T convert(S source);
+}
+```
+
+**Spec (uses the interface as a supertype)**
+
+```java
+@MappingSpec(
+  value = com.detornium.graft.mappers.CustomMappingInterfaceMapper.class,
+  targetSuperType = com.detornium.graft.interfaces.CustomMapperInterface.class)
+class CustomMappingInterfaceSpec extends MappingDsl<SimpleModel, SimpleDto> {}
+```
+
+**Generated**
+
+```java
+public final class CustomMappingInterfaceMapper
+        implements CustomMapperInterface<SimpleModel, SimpleDto> {
+
+    @Override
+    public final SimpleDto convert(SimpleModel src) {
+        if (src == null) return null;
+        SimpleDto dst = new SimpleDto();
+        dst.setStringField(src.getStringField());
+        return dst;
+    }
+}
+```
+
+> The generated class implements your SAM `convert(S)->T` with `S=SimpleModel`, `T=SimpleDto`.
+
+#### 2) Generic interface with **swapped type parameters** `<T,S>` → `T convert(S src)`
+
+**Interface**
+
+```java
+public interface CustomMappingInterfaceSwappedParams<T, S> {
+    T convert(S source);
+}
+```
+
+**Spec**
+
+```java
+@MappingSpec(
+  value = com.detornium.graft.mappers.CustomMappingInterfaceSwappedParamsMapper.class,
+  targetSuperType = com.detornium.graft.interfaces.CustomMappingInterfaceSwappedParams.class)
+class CustomMappingInterfaceSwappedParamsSpec extends MappingDsl<SimpleModel, SimpleDto> {}
+```
+
+**Generated**
+
+```java
+public final class CustomMappingInterfaceSwappedParamsMapper
+        implements CustomMappingInterfaceSwappedParams<SimpleDto, SimpleModel> {
+
+    @Override
+    public final SimpleDto convert(SimpleModel src) {
+        if (src == null) return null;
+        SimpleDto dst = new SimpleDto();
+        dst.setStringField(src.getStringField());
+        return dst;
+    }
+}
+```
+
+>Type variables are bound correctly even if their order differs (`<T,S>`).
+
+#### 3) **Non-generic** interface (fixed types)
+
+**Interface**
+
+```java
+public interface SpecificTypesMapperInterface {
+    SimpleDto convert(SimpleModel source);
+}
+```
+
+**Spec**
+
+```java
+@MappingSpec(
+  value = com.detornium.graft.mappers.SpecificTypesMapperInterfaceMapper.class,
+  targetSuperType = com.detornium.graft.interfaces.SpecificTypesMapperInterface.class)
+class SpecificTypesMapperInterfaceSpec extends MappingDsl<SimpleModel, SimpleDto> {}
+```
+
+**Generated**
+
+```java
+public final class SpecificTypesMapperInterfaceMapper
+        implements SpecificTypesMapperInterface {
+
+    @Override
+    public final SimpleDto convert(SimpleModel src) {
+        if (src == null) return null;
+        SimpleDto dst = new SimpleDto();
+        dst.setStringField(src.getStringField());
+        return dst;
+    }
+}
+```
+
+> Fixed-type contracts work the same: Graft implements your `convert` method and fills it with the mapping logic.
+
+#### 4) **Common generic type parameter** (same source & target)
+
+Sometimes your interface uses a **single generic type parameter** for both the parameter and the return type.
+
+**Interface**
+
+```java
+public interface CommonGenericTypeInterface<T> {
+    T copy(T item);
+}
+```
+
+**Spec**
+
+```java
+@MappingSpec(
+  value = com.detornium.graft.mappers.CommonGenericTypeInterfaceMapper.class,
+  targetSuperType = com.detornium.graft.interfaces.CommonGenericTypeInterface.class
+)
+class CommonGenericTypeInterfaceSpec extends MappingDsl<SimpleModel, SimpleModel> {}
+```
+
+**Generated**
+
+```java
+public final class CommonGenericTypeInterfaceMapper
+        implements CommonGenericTypeInterface<SimpleModel> {
+
+    @Override
+    public final SimpleModel copy(SimpleModel src) {
+        if (src == null) return null;
+        SimpleModel dst = new SimpleModel();
+        dst.setStringField(src.getStringField());
+        return dst;
+    }
+}
+```
+
+> **Why this works:** the processor binds the single type variable `T` to `SimpleModel` in both positions, so the SAM becomes `SimpleModel copy(SimpleModel)`.
+
+---
+
 ## How it works
 
 1. You declare mappings in a spec class (extends `MappingDsl<S, D>`):

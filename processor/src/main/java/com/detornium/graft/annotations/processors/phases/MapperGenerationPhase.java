@@ -15,11 +15,11 @@
  */
 package com.detornium.graft.annotations.processors.phases;
 
-import com.detornium.graft.Mapper;
 import com.detornium.graft.annotations.processors.ProcessingException;
 import com.detornium.graft.annotations.processors.models.Fqcn;
 import com.detornium.graft.annotations.processors.models.GenerationContext;
 import com.detornium.graft.annotations.processors.models.MappingContext;
+import com.detornium.graft.annotations.processors.models.TargetSuperInfo;
 import com.detornium.graft.annotations.processors.models.tree.Node;
 import com.detornium.graft.annotations.processors.scanners.MapperGenerationVisitor;
 import com.squareup.javapoet.*;
@@ -28,6 +28,8 @@ import javax.annotation.processing.Filer;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 import static com.detornium.graft.annotations.processors.Constants.*;
 import static com.detornium.graft.annotations.processors.utils.CodeSnippets.returnNullIfNullCode;
@@ -51,7 +53,9 @@ public class MapperGenerationPhase extends AbstractProcessingPhase {
         GenerationContext generationContext = new GenerationContext();
         tree.accept(new MapperGenerationVisitor(generationContext));
 
-        MethodSpec.Builder mapMethod = MethodSpec.methodBuilder("map")
+        TargetSuperInfo targetSuperInfo = context.getTargetSuperInfo();
+
+        MethodSpec.Builder mapMethod = MethodSpec.methodBuilder(targetSuperInfo.getMethodName())
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addAnnotation(Override.class)
                 .returns(targetType)
@@ -62,9 +66,27 @@ public class MapperGenerationPhase extends AbstractProcessingPhase {
         mapMethod.addStatement("return $L", TARGET_VAR_NAME);
 
 
-        ParameterizedTypeName superInterface = ParameterizedTypeName.get(
-                ClassName.get(Mapper.class), srcType, targetType
-        );
+        // TODO: refactor
+        Integer sourceParamIndex = targetSuperInfo.getSourceParamIndex();
+        Integer targetParamIndex = targetSuperInfo.getTargetParamIndex();
+
+        long argsCount = Stream.of(sourceParamIndex, targetParamIndex)
+                .filter(Objects::nonNull)
+                .distinct()
+                .count();
+
+        TypeName[] typeArguments = new TypeName[(int) argsCount];
+
+        if (sourceParamIndex != null) {
+            typeArguments[sourceParamIndex] = srcType;
+        }
+        if (targetParamIndex != null) {
+            typeArguments[targetParamIndex] = targetType;
+        }
+
+        TypeName superInterface = (argsCount == 0)
+                ? ClassName.get(targetSuperInfo.getTargetInterface())
+                : ParameterizedTypeName.get(ClassName.get(targetSuperInfo.getTargetInterface()), typeArguments);
 
         Fqcn fqcn = context.getMapperType();
 

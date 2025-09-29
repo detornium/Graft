@@ -36,6 +36,12 @@ import javax.lang.model.util.Types;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+
+import static com.detornium.graft.annotations.processors.utils.Predicates.*;
+import static java.util.function.Predicate.not;
+import static javax.lang.model.util.ElementFilter.methodsIn;
 
 public class ProcessingUtils {
 
@@ -189,5 +195,68 @@ public class ProcessingUtils {
         return Optional.empty();
     }
 
+    public Optional<ExecutableElement> findEffectiveSam(TypeElement iface) {
+        List<ExecutableElement> all = methodsIn(elements.getAllMembers(iface));
+        List<ExecutableElement> declared = methodsIn(iface.getEnclosedElements());
+
+        // Keep instance, non-private, non-static, non-Object-like
+        List<ExecutableElement> candidates = all.stream()
+                .filter(not(isStatic().or(isPrivate())))
+                .filter(not(isObjectMethod()))
+                .toList();
+
+        // Drop inherited members that are overridden by a declaration in this interface (default or abstract)
+        List<ExecutableElement> visible = candidates.stream()
+                .filter(declaredIn(iface).or(not(overriddenByAny(declared))))
+                .toList();
+
+        // Abstracts = visible non-default instance methods
+        List<ExecutableElement> abstracts = visible.stream()
+                .filter(not(isDefaultMethod()))
+                .collect(Collectors.toList());
+
+        // Remove abstracts that are implemented by any visible default override
+        abstracts.removeIf(absM -> visible.stream()
+                .filter(v -> v != absM)
+                .anyMatch(isDefaultMethod().and(n -> elements.overrides(n, absM, iface)))
+        );
+
+        // Count distinct signatures
+        boolean methodFound = abstracts.stream()
+                .map(this::getSignature)
+                .distinct()
+                .limit(2)
+                .count() == 1;
+
+        return methodFound
+                ? abstracts.stream().findAny()
+                : Optional.empty();
+    }
+
+    private Predicate<ExecutableElement> declaredIn(TypeElement type) {
+        return (element) -> element.getEnclosingElement().equals(type);
+    }
+
+    private Predicate<ExecutableElement> overriddenByAny(List<ExecutableElement> methods) {
+        return (inMethod) -> methods.stream()
+                .anyMatch(method -> elements.overrides(method, inMethod, (TypeElement) inMethod.getEnclosingElement()));
+    }
+
+    private String getSignature(ExecutableElement method) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(types.erasure(method.getReturnType()));
+        sb.append(' ');
+        sb.append(method.getSimpleName()).append('(');
+        boolean first = true;
+        for (var p : method.getParameters()) {
+            if (!first) {
+                sb.append(',');
+            }
+            first = false;
+            sb.append(types.erasure(p.asType()).toString());
+        }
+        sb.append(')');
+        return sb.toString();
+    }
 
 }

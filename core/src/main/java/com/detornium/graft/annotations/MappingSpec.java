@@ -51,6 +51,7 @@ public @interface MappingSpec {
      * or as an imported simple class name (e.g. MyMapper.class).
      * If the package is not specified, the package of the annotated class is used.
      */
-    Class<? extends Mapper<?, ?>> value();
+    Class<?> value();
 
+    Class<?> targetSuperType() default Mapper.class;
 }
