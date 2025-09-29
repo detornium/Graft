@@ -28,6 +28,8 @@ import javax.annotation.processing.Filer;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.lang.model.element.Modifier;
 import java.io.IOException;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 import static com.detornium.graft.annotations.processors.Constants.*;
 import static com.detornium.graft.annotations.processors.utils.CodeSnippets.returnNullIfNullCode;
@@ -64,16 +66,22 @@ public class MapperGenerationPhase extends AbstractProcessingPhase {
         mapMethod.addStatement("return $L", TARGET_VAR_NAME);
 
 
-        int argsCount = (targetSuperInfo.getSourceParamIndex() == null ? 0 : 1)
-                + (targetSuperInfo.getTargetParamIndex() == null ? 0 : 1);
+        // TODO: refactor
+        Integer sourceParamIndex = targetSuperInfo.getSourceParamIndex();
+        Integer targetParamIndex = targetSuperInfo.getTargetParamIndex();
 
-        TypeName[] typeArguments = new TypeName[argsCount];
+        long argsCount = Stream.of(sourceParamIndex, targetParamIndex)
+                .filter(Objects::nonNull)
+                .distinct()
+                .count();
 
-        if (targetSuperInfo.getSourceParamIndex() != null) {
-            typeArguments[targetSuperInfo.getSourceParamIndex()] = srcType;
+        TypeName[] typeArguments = new TypeName[(int) argsCount];
+
+        if (sourceParamIndex != null) {
+            typeArguments[sourceParamIndex] = srcType;
         }
-        if (targetSuperInfo.getTargetParamIndex() != null) {
-            typeArguments[targetSuperInfo.getTargetParamIndex()] = targetType;
+        if (targetParamIndex != null) {
+            typeArguments[targetParamIndex] = targetType;
         }
 
         TypeName superInterface = (argsCount == 0)
