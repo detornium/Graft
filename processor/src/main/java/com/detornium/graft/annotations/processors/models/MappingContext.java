@@ -26,6 +26,7 @@ import java.util.Set;
 
 @Data
 public class MappingContext {
+    private TargetSuperInfo targetSuperInfo;
     private Element elementToProcess;
     private TypeElement spec;
     private Fqcn mapperType;

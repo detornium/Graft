@@ -15,11 +15,11 @@
  */
 package com.detornium.graft.annotations.processors.phases;
 
-import com.detornium.graft.Mapper;
 import com.detornium.graft.annotations.processors.ProcessingException;
 import com.detornium.graft.annotations.processors.models.Fqcn;
 import com.detornium.graft.annotations.processors.models.GenerationContext;
 import com.detornium.graft.annotations.processors.models.MappingContext;
+import com.detornium.graft.annotations.processors.models.TargetSuperInfo;
 import com.detornium.graft.annotations.processors.models.tree.Node;
 import com.detornium.graft.annotations.processors.scanners.MapperGenerationVisitor;
 import com.squareup.javapoet.*;
@@ -51,7 +51,9 @@ public class MapperGenerationPhase extends AbstractProcessingPhase {
         GenerationContext generationContext = new GenerationContext();
         tree.accept(new MapperGenerationVisitor(generationContext));
 
-        MethodSpec.Builder mapMethod = MethodSpec.methodBuilder("map")
+        TargetSuperInfo targetSuperInfo = context.getTargetSuperInfo();
+
+        MethodSpec.Builder mapMethod = MethodSpec.methodBuilder(targetSuperInfo.getMethodName())
                 .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
                 .addAnnotation(Override.class)
                 .returns(targetType)
@@ -62,9 +64,21 @@ public class MapperGenerationPhase extends AbstractProcessingPhase {
         mapMethod.addStatement("return $L", TARGET_VAR_NAME);
 
 
-        ParameterizedTypeName superInterface = ParameterizedTypeName.get(
-                ClassName.get(Mapper.class), srcType, targetType
-        );
+        int argsCount = (targetSuperInfo.getSourceParamIndex() == null ? 0 : 1)
+                + (targetSuperInfo.getTargetParamIndex() == null ? 0 : 1);
+
+        TypeName[] typeArguments = new TypeName[argsCount];
+
+        if (targetSuperInfo.getSourceParamIndex() != null) {
+            typeArguments[targetSuperInfo.getSourceParamIndex()] = srcType;
+        }
+        if (targetSuperInfo.getTargetParamIndex() != null) {
+            typeArguments[targetSuperInfo.getTargetParamIndex()] = targetType;
+        }
+
+        TypeName superInterface = (argsCount == 0)
+                ? ClassName.get(targetSuperInfo.getTargetInterface())
+                : ParameterizedTypeName.get(ClassName.get(targetSuperInfo.getTargetInterface()), typeArguments);
 
         Fqcn fqcn = context.getMapperType();
 

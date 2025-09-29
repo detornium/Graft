@@ -16,9 +16,7 @@
 
 package com.detornium.graft.annotations.processors.utils;
 
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
-import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.*;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.MirroredTypeException;
 import javax.lang.model.type.TypeKind;
@@ -36,7 +34,18 @@ public final class Helpers {
     }
 
     /**
-     * Entry for single Class<?> members: get(ann, MyAnn::value).ifResolved(...).orElse(...);
+     * Utility method to safely extract a class value from an annotation.
+     * This method handles the MirroredTypeException that occurs when trying to access
+     * a class value in an annotation during annotation processing.
+     *
+     * @param ann           The annotation instance.
+     * @param getter        A function to get the class value from the annotation.
+     * @param reolvedMapper A function to map the resolved class to the desired return type.
+     * @param mirrorMapper  A function to map the TypeMirror to the desired return type if MirroredTypeException occurs.
+     * @param <A>           The type of the annotation.
+     * @param <R>           The return type.
+     * @param <C>           The type of the class being extracted.
+     * @return The mapped value of type R.
      */
     public static <A extends Annotation, R, C extends Class<?>> R getAnnotationClassValue(A ann, Function<A, C> getter,
                                                                                           Function<C, R> reolvedMapper,
@@ -51,6 +60,26 @@ public final class Helpers {
 
     public static boolean isRecord(TypeElement type) {
         return type.getKind() == ElementKind.RECORD;
+    }
+
+    public static boolean isInterface(TypeElement type) {
+        return type.getKind() == ElementKind.INTERFACE;
+    }
+
+    public static boolean isPublic(Element type) {
+        return type.getModifiers().contains(Modifier.PUBLIC);
+    }
+
+    public static boolean isProtected(Element type) {
+        return type.getModifiers().contains(Modifier.PROTECTED);
+    }
+
+    public static boolean hasNoArgs(ExecutableElement element) {
+        return element.getParameters().isEmpty();
+    }
+
+    public static boolean isConstructor(ExecutableElement element) {
+        return element.getKind() == ElementKind.CONSTRUCTOR;
     }
 
     public static boolean isCloneable(TypeMirror tm) {
